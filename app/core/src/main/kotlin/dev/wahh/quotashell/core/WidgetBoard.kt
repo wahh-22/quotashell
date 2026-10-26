@@ -36,9 +36,9 @@ private val stampFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
 
 private val codes =
     mapOf(
-        ProviderId.CODEX to ("CDX-01" to "CODEX"),
-        ProviderId.CLAUDE to ("CLD-02" to "CLAUDE"),
-        ProviderId.OPENCODE_GO to ("OCG-03" to "OPENCODE GO"),
+        ProviderId.CODEX to ("CDX-01" to "Codex"),
+        ProviderId.CLAUDE to ("CLD-02" to "Claude"),
+        ProviderId.OPENCODE_GO to ("OCG-03" to "OpenCode Go"),
     )
 
 /**
@@ -50,6 +50,7 @@ fun board(
     now: Instant,
     staleAfterSeconds: Long,
     zone: ZoneId,
+    allCaps: Boolean = true,
 ): Board {
     val cards =
         ProviderId.entries.map { provider ->
@@ -59,9 +60,9 @@ fun board(
     val latest = snapshots.mapNotNull { it.capturedAt }.maxOrNull()
     return Board(
         cards,
-        latest?.let { "LAST SYNC " + stampFormat.format(it.atZone(zone)) } ?: "NO DATA",
+        latest?.let { "Last sync " + stampFormat.format(it.atZone(zone)) } ?: "No data",
         cards.count { it.alert },
-    )
+    ).withCasing(allCaps)
 }
 
 private fun card(
@@ -72,10 +73,10 @@ private fun card(
     val (code, name) = codes.getValue(snapshot.provider)
     val status =
         when (snapshot.connection) {
-            Connection.DISCONNECTED -> "NOT CONNECTED"
-            Connection.CONNECTED -> if (display.state == "Connected") "SYNC · ${display.age}" else display.state.withAge(display.age)
+            Connection.DISCONNECTED -> "Not connected"
+            Connection.CONNECTED -> if (display.state == "Connected") "Sync · ${display.age}" else display.state.withAge(display.age)
             else -> display.state.withAge(display.age)
-        }.uppercase(Locale.US)
+        }
     val alert =
         snapshot.connection == Connection.RECONNECT_REQUIRED ||
             snapshot.connection == Connection.ERROR ||
@@ -84,16 +85,16 @@ private fun card(
         snapshot.windows.zip(display.windows) { window, shown ->
             val percent = window.usedPercent?.let { kotlin.math.round(it).toInt() }
             BoardRow(
-                shown.title.uppercase(Locale.US),
+                shown.title,
                 percent?.let { "$it%" } ?: "N/A",
                 percent,
-                window.resetsAt?.let { resetFormat.format(it.atZone(zone)).uppercase(Locale.US) } ?: "--",
+                window.resetsAt?.let { resetFormat.format(it.atZone(zone)) } ?: "--",
                 percent != null && percent >= HOT_PERCENT,
             )
         }
     val note =
         if (snapshot.provider == ProviderId.CODEX && snapshot.capturedAt != null) {
-            "RESETS AVAILABLE · " + (snapshot.resetInventoryCount?.toString() ?: "UNKNOWN")
+            "Resets available · " + (snapshot.resetInventoryCount?.toString() ?: "Unknown")
         } else {
             null
         }
@@ -101,3 +102,22 @@ private fun card(
 }
 
 private fun String.withAge(age: String): String = if (age == "No snapshot" || contains(age)) this else "$this · $age"
+
+/** Natural text stays intact until the presentation boundary; default board callers retain legacy casing. */
+fun Board.withCasing(allCaps: Boolean): Board {
+    if (!allCaps) return this
+
+    fun String.caps() = uppercase(Locale.US)
+    return copy(
+        cards =
+            cards.map { card ->
+                card.copy(
+                    name = card.name.caps(),
+                    status = card.status.caps(),
+                    note = card.note?.caps(),
+                    rows = card.rows.map { it.copy(label = it.label.caps(), reset = it.reset.caps()) },
+                )
+            },
+        stamp = stamp.caps(),
+    )
+}

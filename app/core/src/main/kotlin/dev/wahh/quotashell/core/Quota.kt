@@ -175,9 +175,9 @@ data class TerminalTheme(
     val backgroundArgb: Int get() = (backgroundAlpha shl 24) or PANEL_RGB
 
     companion object {
-        /** Blue and panel fill measured on the installed PhantomShell launcher. */
+        /** Rounded RGB from the user's PhantomShell blue.json theme. */
         const val DEFAULT_ACCENT_HEX = "347AFF"
-        const val PANEL_RGB = 0x070B19
+        const val PANEL_RGB = 0x070B1A
     }
 }
 

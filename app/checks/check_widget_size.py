@@ -51,5 +51,34 @@ class WidgetSizeTest(unittest.TestCase):
                         self.assertLessEqual(dp(height), 32)
 
 
+class ThemeWiringTest(unittest.TestCase):
+    """Source integration guards, not Android runtime or pixel-rendering tests."""
+
+    def source(self, name):
+        return (RES.parent / "kotlin" / "dev" / "wahh" / "quotashell" / name).read_text()
+
+    def test_board_uses_phantom_theme_and_every_rendered_slot(self):
+        renderer = self.source("PhantomBoardRenderer.kt")
+        self.assertIn("theme: PhantomTheme", renderer)
+        for slot in ("outline", "window", "text", "subtext", "subtext2", "accent", "notifications", "background"):
+            self.assertIn('theme.color("' + slot + '")', renderer)
+        for option in ("renderWindowShape", "renderButtonShape", "renderNotificationShape", "fontSizeOffset", "displayText"):
+            self.assertIn("theme." + option, renderer)
+        self.assertIn("store.phantomTheme()", self.source("QuotaWidget.kt"))
+        self.assertIn("allCaps = false", self.source("QuotaWidget.kt"))
+
+    def test_theme_document_actions_and_nonsecret_storage_are_wired(self):
+        settings = self.source("SettingsActivity.kt") + self.source("ThemeDocumentIo.kt")
+        for action in ("ACTION_OPEN_DOCUMENT", "ACTION_CREATE_DOCUMENT"):
+            self.assertIn(action, settings)
+        self.assertIn("application/json", settings)
+        self.assertIn("PhantomTheme.MAX_BYTES", settings)
+        self.assertIn("PhantomTheme.parse", settings)
+        self.assertIn("Thread", settings)
+        store = self.source("SnapshotStore.kt")
+        self.assertIn('putString("phantomTheme"', store)
+        self.assertIn("PhantomTheme.migrateLegacy", store)
+
+
 if __name__ == "__main__":
     unittest.main()

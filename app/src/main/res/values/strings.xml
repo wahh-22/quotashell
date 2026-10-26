@@ -1,10 +1,14 @@
 <resources>
     <string name="app_name">QuotaShell</string>
     <string name="widget_name">QuotaShell · all providers</string>
-    <string name="widget_description">PhantomShell-style panel with Codex, Claude and OpenCode Go quotas. Customize accent and opacity.</string>
+    <string name="widget_description">PhantomShell-style board with Codex, Claude and OpenCode Go quotas. Import or edit colors, shapes and typography.</string>
     <string name="open_dashboard">Open QuotaShell dashboard</string>
     <string name="refresh">Refresh</string>
-    <string name="background_opacity">Background opacity: %1$d%%</string>
+    <string name="theme_no_picker">No document picker is available on this device.</string>
+    <string name="theme_access_denied">Document access was denied.</string>
+    <string name="theme_reading">Reading theme…</string>
+    <string name="theme_writing">Writing theme…</string>
+    <string name="theme_all_caps">All caps</string>
     <string name="notify_opt_in">Opt in to reconnect notifications</string>
     <string name="connection_status">%1$s · %2$s. Saved credentials are never displayed.</string>
 </resources>

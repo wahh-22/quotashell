@@ -2,21 +2,25 @@ package dev.wahh.quotashell
 
 import android.app.Activity
 import android.appwidget.AppWidgetManager
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
-import android.widget.*
+import android.widget.EditText
+import android.widget.ScrollView
+import android.widget.TextView
+import dev.wahh.quotashell.core.PhantomTheme
 import dev.wahh.quotashell.core.RefreshPolicy
-import dev.wahh.quotashell.core.TerminalTheme
 
-/** Also the launcher configuration screen for the all-provider widget. */
+/** Also the launcher configuration screen for the all-provider widget. Import edits a draft. */
 class SettingsActivity : Activity() {
     private val store get() = (application as QuotaApplication).store
     private var widgetId = AppWidgetManager.INVALID_APPWIDGET_ID
-    private lateinit var accent: EditText
-    private lateinit var opacity: SeekBar
+    private lateinit var editor: ThemeEditor
     private lateinit var stale: EditText
+    private lateinit var message: TextView
+    private var pendingExport: PhantomTheme? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,57 +32,70 @@ class SettingsActivity : Activity() {
             finish()
             return
         }
-        val theme = store.theme()
+        val theme =
+            savedInstanceState?.getString("draft")?.let { runCatching { PhantomTheme.parse(it) }.getOrNull() } ?: store.phantomTheme()
+        pendingExport = savedInstanceState?.getString("pendingExport")?.let { runCatching { PhantomTheme.parse(it) }.getOrNull() }
+        render(theme, savedInstanceState)
+    }
+
+    private fun render(
+        theme: PhantomTheme,
+        state: Bundle? = null,
+        notice: String = "",
+    ) {
         val body = column()
-        body.addView(text("> Appearance", 24f, theme.accentArgb))
-        body.addView(text("Appearance and stale threshold apply to all widgets and the dashboard.", 12f))
-        body.addView(text("Accent · six hex digits (PhantomShell blue ${TerminalTheme.DEFAULT_ACCENT_HEX})"))
-        accent =
-            EditText(this).apply {
-                isSingleLine = true
-                setText(savedInstanceState?.getString("accent") ?: "%06X".format(theme.accentArgb and 0xFFFFFF))
-            }
-        body.addView(accent)
-        val opacityLabel = text("")
-        body.addView(opacityLabel)
-        opacity =
-            SeekBar(this).apply {
-                max = 100
-                progress = savedInstanceState?.getInt("opacity") ?: theme.opacityPercent.coerceIn(0, 100)
-                opacityLabel.text = getString(R.string.background_opacity, progress)
-                contentDescription = "Background opacity percent"
-                setOnSeekBarChangeListener(
-                    object : SeekBar.OnSeekBarChangeListener {
-                        override fun onProgressChanged(
-                            bar: SeekBar?,
-                            value: Int,
-                            fromUser: Boolean,
-                        ) {
-                            opacityLabel.text = getString(R.string.background_opacity, value)
-                        }
-
-                        override fun onStartTrackingTouch(bar: SeekBar?) {}
-
-                        override fun onStopTrackingTouch(bar: SeekBar?) {}
+        body.addView(text("> Appearance", 24f, theme.color("accent").argb))
+        body.addView(text("One board · all three providers. Save applies appearance and staleness to every widget.", 12f))
+        message = text(state?.getString("message") ?: notice)
+        message.accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE
+        body.addView(message)
+        body.addView(
+            button("Import PhantomShell theme") {
+                launchDocument(
+                    Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/json"
                     },
+                    IMPORT,
                 )
-            }
-        body.addView(opacity)
+            },
+        )
+        body.addView(
+            button("Export theme") {
+                val draft = draftOrError() ?: return@button
+                pendingExport = draft
+                launchDocument(
+                    Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/json"
+                        putExtra(Intent.EXTRA_TITLE, "quotashell-theme.json")
+                    },
+                    EXPORT,
+                )
+            },
+        )
+        body.addView(
+            button("Reset to default") {
+                val minutes = stale.text.toString()
+                render(PhantomTheme.default(), notice = "Default blue theme loaded. Tap Save to apply.")
+                stale.setText(minutes)
+            },
+        )
+        editor = ThemeEditor(this, theme, body, state)
         body.addView(
             text(
-                "Mark snapshots stale after minutes (${RefreshPolicy.MIN_STALE_MINUTES}–${RefreshPolicy.MAX_STALE_MINUTES}). " +
-                    "Background refresh runs about every ${RefreshPolicy.INTERVAL_MINUTES} min.",
+                "Mark snapshots stale after minutes (${RefreshPolicy.MIN_STALE_MINUTES}–${RefreshPolicy.MAX_STALE_MINUTES}). Background refresh runs about every ${RefreshPolicy.INTERVAL_MINUTES} min.",
             ),
         )
         stale =
             EditText(this).apply {
                 inputType = InputType.TYPE_CLASS_NUMBER
-                setText(savedInstanceState?.getString("stale") ?: store.staleMinutes().toString())
+                setText(state?.getString("stale") ?: store.staleMinutes().toString())
             }
         body.addView(stale)
         body.addView(
             text(
-                "Transparency affects only panel backgrounds. Use a contrasting accent for your wallpaper. Launcher updates may be delayed by Android battery policy.",
+                "Imports are limited to 64 KiB. Import/reset changes only this draft until Save. Launcher-only settings are preserved on export, not rendered.",
                 12f,
             ),
         )
@@ -87,35 +104,91 @@ class SettingsActivity : Activity() {
         terminalContent(ScrollView(this).apply { addView(body) })
     }
 
-    private fun save() {
-        val hex =
-            accent.text
-                .toString()
-                .trim()
-                .removePrefix("#")
-        if (!hex.matches(Regex("[0-9a-fA-F]{6}"))) {
-            accent.error = "Use six hex digits, e.g. ${TerminalTheme.DEFAULT_ACCENT_HEX}"
-            return
+    private fun draftOrError(): PhantomTheme? =
+        try {
+            editor.theme()
+        } catch (error: IllegalArgumentException) {
+            message.text = error.message
+            null
         }
+
+    @Suppress("DEPRECATION") // Native Activity API: no AndroidX dependency.
+    private fun launchDocument(intent: Intent, request: Int) {
+        try {
+            startActivityForResult(intent, request)
+        } catch (_: ActivityNotFoundException) {
+            message.setText(R.string.theme_no_picker)
+        } catch (_: SecurityException) {
+            message.setText(R.string.theme_access_denied)
+        }
+    }
+
+    @Deprecated("Native Activity result bridge")
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?,
+    ) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        val io = ThemeDocumentIo(this)
+        when (requestCode) {
+            IMPORT -> {
+                message.setText(R.string.theme_reading)
+                io.import(uri) { result ->
+                    result.fold(
+                        onSuccess = { theme ->
+                            val minutes = stale.text.toString()
+                            render(theme, notice = "Theme imported. Tap Save to apply.")
+                            stale.setText(minutes)
+                        },
+                        onFailure = { error ->
+                            message.text =
+                                if (error is IllegalArgumentException) error.message else "Cannot read theme. Choose a valid UTF-8 PhantomShell JSON file (64 KiB maximum)."
+                        },
+                    )
+                }
+            }
+
+            EXPORT -> {
+                val theme = pendingExport ?: return
+                pendingExport = null
+                message.setText(R.string.theme_writing)
+                io.export(uri, theme) { result ->
+                    message.text = if (result.isSuccess) "Theme exported." else "Cannot write theme. Choose a writable document and retry."
+                }
+            }
+        }
+    }
+
+    private fun save() {
+        val theme = draftOrError() ?: return
         val minutes = stale.text.toString().toIntOrNull()
         if (minutes == null || !RefreshPolicy.isValidStaleMinutes(minutes)) {
             stale.error = "Enter ${RefreshPolicy.MIN_STALE_MINUTES}–${RefreshPolicy.MAX_STALE_MINUTES} minutes"
             return
         }
-        store.saveSettings(TerminalTheme(hex, opacity.progress), minutes)
+        store.saveSettings(theme, minutes)
         if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-            QuotaWidget.updateAll(this)
             setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
         }
         finish()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        if (::accent.isInitialized) {
-            outState.putString("accent", accent.text.toString())
-            outState.putInt("opacity", opacity.progress)
+        if (::editor.isInitialized) {
+            outState.putString("draft", editor.original.toJson())
+            editor.saveState(outState)
             outState.putString("stale", stale.text.toString())
+            outState.putString("message", message.text.toString())
+            outState.putString("pendingExport", pendingExport?.toJson())
         }
         super.onSaveInstanceState(outState)
+    }
+
+    companion object {
+        private const val IMPORT = 41
+        private const val EXPORT = 42
     }
 }

@@ -110,9 +110,9 @@ class PresentationTest {
     }
 
     @Test fun themeDefaultsAndNormalizationAreDeterministic() {
-        // PhantomShell's measured blue and panel fill.
+        // PhantomShell blue.json HSL converted to ARGB (not the old measured palette).
         assertEquals(0xFF347AFF.toInt(), TerminalTheme().accentArgb)
-        assertEquals(0xE6070B19.toInt(), TerminalTheme().backgroundArgb)
+        assertEquals(0xE6070B1A.toInt(), TerminalTheme().backgroundArgb)
         assertEquals(230, TerminalTheme().backgroundAlpha)
         assertEquals(0, TerminalTheme(opacityPercent = -9).backgroundAlpha)
         assertEquals(255, TerminalTheme(opacityPercent = 130).backgroundAlpha)

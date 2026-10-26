@@ -19,11 +19,25 @@ class SnapshotStore(
             SnapshotCodec.decode(it, prefs.getString("snapshot.${it.name}", null))
         }
 
-    fun theme() =
-        TerminalTheme(
-            prefs.getString("accent", TerminalTheme.DEFAULT_ACCENT_HEX) ?: TerminalTheme.DEFAULT_ACCENT_HEX,
-            prefs.getInt("opacity", 90),
+    fun phantomTheme(): PhantomTheme {
+        val json = prefs.getString("phantomTheme", null)
+        if (json != null) {
+            return runCatching { PhantomTheme.parse(json) }.getOrElse { PhantomTheme.default() }
+        }
+        return PhantomTheme.migrateLegacy(
+            prefs.getString("accent", null),
+            if (prefs.contains("opacity")) prefs.getInt("opacity", 90) else null,
         )
+    }
+
+    /** Dashboard retains its native-view layout; board-only shapes/type remain widget settings. */
+    fun theme(): TerminalTheme {
+        val theme = phantomTheme()
+        return TerminalTheme(
+            "%06X".format(theme.color("accent").argb and 0xFFFFFF),
+            kotlin.math.round(theme.color("window").alpha * 100).toInt(),
+        )
+    }
 
     fun staleMinutes() = RefreshPolicy.staleMinutes(if (prefs.contains("staleMinutes")) prefs.getInt("staleMinutes", 0) else null)
 
@@ -37,13 +51,14 @@ class SnapshotStore(
     }
 
     fun saveSettings(
-        theme: TerminalTheme,
+        theme: PhantomTheme,
         staleMinutes: Int,
     ) {
         prefs
             .edit()
-            .putString("accent", "%06X".format(theme.accentArgb and 0xFFFFFF))
-            .putInt("opacity", theme.opacityPercent.coerceIn(0, 100))
+            .putString("phantomTheme", theme.toJson())
+            .remove("accent")
+            .remove("opacity")
             .putInt("staleMinutes", RefreshPolicy.staleMinutes(staleMinutes))
             .apply()
         changed()

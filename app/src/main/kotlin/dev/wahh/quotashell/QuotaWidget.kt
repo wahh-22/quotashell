@@ -59,10 +59,13 @@ class QuotaWidget : AppWidgetProvider() {
             id: Int,
         ) {
             val store = (context.applicationContext as QuotaApplication).store
-            val content = board(store.snapshots(), Instant.now(), store.staleMinutes() * 60L, ZoneId.systemDefault())
+            val content = board(store.snapshots(), Instant.now(), store.staleMinutes() * 60L, ZoneId.systemDefault(), allCaps = false)
             val (widthDp, heightDp) = sizeDp(manager.getAppWidgetOptions(id))
             val views = RemoteViews(context.packageName, R.layout.widget_quota)
-            views.setImageViewBitmap(R.id.widget_board, PhantomBoardRenderer.render(context, content, store.theme(), widthDp, heightDp))
+            views.setImageViewBitmap(
+                R.id.widget_board,
+                PhantomBoardRenderer.render(context, content, store.phantomTheme(), widthDp, heightDp),
+            )
             views.setContentDescription(
                 R.id.widget_board,
                 content.cards.joinToString(". ") { card ->

@@ -1,8 +1,9 @@
 # QuotaShell
 
 Native Kotlin Android dashboard and launcher widget (`dev.wahh.quotashell`, Android 8+).
-Dark monospace panels, configurable blue accent and background opacity. Each widget
-selects one provider; add several widgets for OpenAI/Codex, Claude and OpenCode Go.
+Dark monospace panels and a single PhantomShell-style board showing OpenAI/Codex,
+Claude and OpenCode Go together. Import a PhantomShell theme or edit its widget colors,
+shapes and typography.
 
 Direct HTTPS quota reads support manually entered Codex OAuth access tokens, Claude
 OAuth access tokens with usage/profile scope, and OpenCode Go API keys. Credentials
@@ -184,13 +185,12 @@ previous-command differential baseline: **N/A**. No tests were omitted or ignore
 ## Dashboard and widget
 
 1. Install the debug APK after a successful build. Open QuotaShell → Settings.
-2. Choose a six-digit accent, panel opacity (0–100%) and stale threshold (5–1440 min).
-   Text stays opaque; choose a contrasting accent for your wallpaper.
-3. In PhantomShell or another widget-capable launcher, add **QuotaShell · provider
-   quota**. Choose a provider and Save; Cancel does not add the widget.
-4. Tap its title for the dashboard, Refresh for dashboard refresh, or Settings to
-   reconfigure that widget. Appearance/staleness settings are shared across widgets;
-   provider selection is per widget. Allow about 4×5 cells for three quota windows.
+2. Import or edit a theme (see below), and set a stale threshold (30–1440 min).
+3. In PhantomShell or another widget-capable launcher, add **QuotaShell · all providers**
+   and Save; Cancel does not add the widget. The default footprint is about 4×2 cells;
+   resize for readability. All three providers always appear on the board.
+4. Tap the board for the dashboard or the Sync area for dashboard refresh. Open Settings
+   from the dashboard to reconfigure all widgets together.
 
 Settings/data saves update all widgets immediately. Dashboard age updates every
 minute while visible; widgets request a local re-render every 30 minutes, subject
@@ -198,6 +198,59 @@ to Android/launcher battery policy. The separate periodic network job requests p
 refreshes on a similar best-effort interval. Age/stale transitions can lag on a sleeping
 launcher; this is not a real-time expiry alarm. Launcher sizing/font scaling must be
 verified on-device.
+
+## PhantomShell theme import and export
+
+Open **Settings / widget appearance → Import PhantomShell theme**, then select a
+PhantomShell JSON export using Android's document picker. Files must be UTF-8 JSON
+objects, at most **64 KiB**, with all eight widget colors and the five presentation
+options. Invalid HSL ranges, non-finite numbers, wrong types and malformed JSON show
+an error without replacing the draft or stored theme. Reading/parsing and writing run
+off the UI thread. If the screen is recreated while an operation is running, retry it.
+
+Import and **Reset to default** load a draft: **Save** persists it and immediately
+requests updates for every widget through the normal snapshot-store change path.
+Cancel leaves the stored theme unchanged. **Export theme** writes the current valid
+draft through Android's create-document picker; it does not implicitly Save.
+
+The default is the supplied PhantomShell **blue.json**, not the previously sampled
+palette. Edit each slot using six-digit **RRGGBB** and **alpha 0–100%**, select shapes,
+toggle all-caps, or enter a font-size offset from **−4 to +6**. Imported offsets outside
+that range are clamped only for rendering; small text has a 3-unit minimum. Larger text
+adds row spacing, and the entire board still scales to fit the widget's bounds.
+
+| Export setting | Widget behavior |
+| --- | --- |
+| `window` / `outline` | Panel fills / outlines and dividers; each uses its own alpha. |
+| `text` / `subtext` / `subtext2` | Primary text / secondary text and labels / stripes, corner marks and codes. |
+| `accent` / `notifications` | Usage bars and Sync / alert glyphs, alert-card highlight and hot usage (85%+). |
+| `background` | Outer frame fill, including independent transparency. |
+| `windowShape` | `TABBED`: tab-labelled chamfered cards; `BEVEL`: chamfers without tabs; `SQUARED` and other values: rectangles. |
+| `buttonShape` | `SQUARED`: bracketed Sync; `BEVEL`: chamfered outline. Other values fall back to brackets. |
+| `notificationShape` | `INVERTED TRIANGLE`, `TRIANGLE`, `CIRCLE`, `SQUARE`, `NONE`. NONE hides the glyph, not the alert-card highlight. Unknown values use an inverted triangle. |
+| `isAllCaps` / `fontSizeOffset` | Uppercase versus natural-case board text / a bounded step added to every text size. |
+
+Unknown shape strings remain unchanged on export. Launcher-only keys (including
+animations, toolkit, status bar, keyboard, immersive mode, bottom text, username,
+blur and snap-to-grid) are retained but do not affect the widget. A launcher widget is
+a static RemoteViews bitmap: PhantomShell animations cannot run inside this board.
+`vignette` can be edited and round-tripped but is not rendered; `vignetteAngle` is
+also export-only. These options describe widget approximations, not a reproduction
+of the launcher's internal layout engine or proof of its per-field enum mappings.
+
+Exports preserve JSON field values, including unknown nested objects/arrays, where
+practical, not original whitespace or numeric spelling. Numbers use the existing
+strict parser's Double representation. Unchanged editor fields retain their original
+HSL/fractional alpha rather than being quantized to the displayed hex/whole percent.
+The native dashboard retains its layout and uses the theme accent and window opacity;
+the full color/shape/type mapping applies to the board widget.
+
+**Migration:** existing explicitly stored accent RGB becomes the theme's accent;
+legacy panel opacity becomes only `window.alpha`. Other slots, including the outer
+background alpha, take blue.json defaults. Missing legacy keys do not override defaults.
+Saving writes the complete JSON to **nonsecret** preferences and removes the two old
+appearance keys; credential storage is never involved. Reset + Save discards legacy
+appearance overrides and restores the exact supplied default theme.
 
 ## T3 integration contracts
 
