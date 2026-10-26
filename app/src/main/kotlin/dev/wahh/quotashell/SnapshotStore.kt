@@ -21,7 +21,7 @@ class SnapshotStore(
 
     fun theme() = TerminalTheme(prefs.getString("accent", "2196F3") ?: "2196F3", prefs.getInt("opacity", 90))
 
-    fun staleMinutes() = prefs.getInt("staleMinutes", 15).coerceIn(5, 1440)
+    fun staleMinutes() = RefreshPolicy.staleMinutes(if (prefs.contains("staleMinutes")) prefs.getInt("staleMinutes", 0) else null)
 
     fun widgetProvider(id: Int): ProviderId =
         ProviderId.entries.firstOrNull {
@@ -45,7 +45,7 @@ class SnapshotStore(
             .edit()
             .putString("accent", "%06X".format(theme.accentArgb and 0xFFFFFF))
             .putInt("opacity", theme.opacityPercent.coerceIn(0, 100))
-            .putInt("staleMinutes", staleMinutes.coerceIn(5, 1440))
+            .putInt("staleMinutes", RefreshPolicy.staleMinutes(staleMinutes))
             .apply()
         changed()
     }

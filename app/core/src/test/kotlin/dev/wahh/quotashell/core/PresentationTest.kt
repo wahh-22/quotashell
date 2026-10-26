@@ -41,6 +41,24 @@ class PresentationTest {
         assertEquals("Codex resets available: 3", display.resetInventory)
     }
 
+    @Test fun recognizedWindowsKeepTheirNameAndOnlyUnknownShowDuration() {
+        val display =
+            present(
+                ProviderSnapshot(
+                    ProviderId.CODEX,
+                    Connection.CONNECTED,
+                    now,
+                    listOf(
+                        QuotaWindow(WindowKind.WEEK, 35.0, null, 604800),
+                        QuotaWindow(WindowKind.FIVE_HOUR, 1.0, null, 18000),
+                        QuotaWindow(WindowKind.OTHER, 2.0, null, 86400),
+                    ),
+                ),
+                now,
+            )
+        assertEquals(listOf("Week", "5h", "24h"), display.windows.map { it.title })
+    }
+
     @Test fun staleBoundaryAndAuthErrorsDoNotHideOldSnapshot() {
         val snapshot =
             ProviderSnapshot(

@@ -6,6 +6,7 @@ import android.app.job.JobScheduler
 import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
+import dev.wahh.quotashell.core.RefreshPolicy
 
 /** Native periodic job; Android may delay it for Doze/battery/network policy. */
 class RefreshJob : JobService() {
@@ -35,7 +36,7 @@ class RefreshJob : JobService() {
                     JobInfo
                         .Builder(100, ComponentName(context, RefreshJob::class.java))
                         .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                        .setPeriodic(30 * 60 * 1000L)
+                        .setPeriodic(RefreshPolicy.INTERVAL_MINUTES * 60 * 1000L)
                         .setPersisted(true)
                         .build(),
                 )

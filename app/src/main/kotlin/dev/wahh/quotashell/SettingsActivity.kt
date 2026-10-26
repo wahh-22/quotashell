@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.text.InputType
 import android.widget.*
 import dev.wahh.quotashell.core.ProviderId
+import dev.wahh.quotashell.core.RefreshPolicy
 import dev.wahh.quotashell.core.TerminalTheme
 
 /** Also the launcher configuration screen: one provider per independently configured widget. */
@@ -79,7 +80,12 @@ class SettingsActivity : Activity() {
                 )
             }
         body.addView(opacity)
-        body.addView(text("Mark snapshots stale after minutes (5–1440)"))
+        body.addView(
+            text(
+                "Mark snapshots stale after minutes (${RefreshPolicy.MIN_STALE_MINUTES}–${RefreshPolicy.MAX_STALE_MINUTES}). " +
+                    "Background refresh runs about every ${RefreshPolicy.INTERVAL_MINUTES} min.",
+            ),
+        )
         stale =
             EditText(this).apply {
                 inputType = InputType.TYPE_CLASS_NUMBER
@@ -108,8 +114,8 @@ class SettingsActivity : Activity() {
             return
         }
         val minutes = stale.text.toString().toIntOrNull()
-        if (minutes == null || minutes !in 5..1440) {
-            stale.error = "Enter 5–1440 minutes"
+        if (minutes == null || !RefreshPolicy.isValidStaleMinutes(minutes)) {
+            stale.error = "Enter ${RefreshPolicy.MIN_STALE_MINUTES}–${RefreshPolicy.MAX_STALE_MINUTES} minutes"
             return
         }
         store.saveSettings(TerminalTheme(hex, opacity.progress), minutes)

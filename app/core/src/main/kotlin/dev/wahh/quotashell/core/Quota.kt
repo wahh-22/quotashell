@@ -135,9 +135,11 @@ fun present(
         age,
         snapshot.windows.map {
             WindowDisplay(
-                it.durationSeconds?.let { seconds ->
-                    if (seconds % 3600L == 0L) "${seconds / 3600}h" else "${seconds}s"
-                } ?: it.kind.title,
+                // Recognized windows keep their name; only unrecognized durations are spelled out.
+                it.durationSeconds
+                    ?.takeIf { _ -> it.kind == WindowKind.OTHER || it.kind == WindowKind.OTHER_SECONDARY }
+                    ?.let { seconds -> if (seconds % 3600L == 0L) "${seconds / 3600}h" else "${seconds}s" }
+                    ?: it.kind.title,
                 it.usedPercent?.let { value -> "${java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()}% used" }
                     ?: "Unavailable",
                 it.usedPercent?.roundToInt(),
