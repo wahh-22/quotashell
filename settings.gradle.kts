@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "QuotaShell"
-include(":core")
+include(":core", ":app")
 project(":core").projectDir = file("app/core")
