@@ -158,7 +158,7 @@ fun present(
 
 /** Global dashboard/widget preferences. Content remains opaque even on a translucent panel. */
 data class TerminalTheme(
-    val accentHex: String = "2196F3",
+    val accentHex: String = DEFAULT_ACCENT_HEX,
     val opacityPercent: Int = 90,
 ) {
     val accentArgb: Int get() {
@@ -167,12 +167,18 @@ data class TerminalTheme(
             0xFF000000L or (
                 hex
                     .takeIf { it.matches(Regex("[0-9a-fA-F]{6}")) }
-                    ?.toLong(16) ?: 0x2196F3L
+                    ?.toLong(16) ?: DEFAULT_ACCENT_HEX.toLong(16)
             )
         ).toInt()
     }
     val backgroundAlpha: Int get() = (opacityPercent.coerceIn(0, 100) * 255.0 / 100).roundToInt()
-    val backgroundArgb: Int get() = (backgroundAlpha shl 24) or 0x0A1018
+    val backgroundArgb: Int get() = (backgroundAlpha shl 24) or PANEL_RGB
+
+    companion object {
+        /** Blue and panel fill measured on the installed PhantomShell launcher. */
+        const val DEFAULT_ACCENT_HEX = "347AFF"
+        const val PANEL_RGB = 0x070B19
+    }
 }
 
 /** Implement in T3. Called off-main; return sanitized snapshots, retaining timestamps on failures. */

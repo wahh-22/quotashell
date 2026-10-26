@@ -110,7 +110,9 @@ class PresentationTest {
     }
 
     @Test fun themeDefaultsAndNormalizationAreDeterministic() {
-        assertEquals(0xFF2196F3.toInt(), TerminalTheme().accentArgb)
+        // PhantomShell's measured blue and panel fill.
+        assertEquals(0xFF347AFF.toInt(), TerminalTheme().accentArgb)
+        assertEquals(0xE6070B19.toInt(), TerminalTheme().backgroundArgb)
         assertEquals(230, TerminalTheme().backgroundAlpha)
         assertEquals(0, TerminalTheme(opacityPercent = -9).backgroundAlpha)
         assertEquals(255, TerminalTheme(opacityPercent = 130).backgroundAlpha)

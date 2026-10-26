@@ -7,18 +7,16 @@ import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
 import android.widget.*
-import dev.wahh.quotashell.core.ProviderId
 import dev.wahh.quotashell.core.RefreshPolicy
 import dev.wahh.quotashell.core.TerminalTheme
 
-/** Also the launcher configuration screen: one provider per independently configured widget. */
+/** Also the launcher configuration screen for the all-provider widget. */
 class SettingsActivity : Activity() {
     private val store get() = (application as QuotaApplication).store
     private var widgetId = AppWidgetManager.INVALID_APPWIDGET_ID
     private lateinit var accent: EditText
     private lateinit var opacity: SeekBar
     private lateinit var stale: EditText
-    private lateinit var provider: Spinner
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,22 +31,8 @@ class SettingsActivity : Activity() {
         val theme = store.theme()
         val body = column()
         body.addView(text("> Appearance", 24f, theme.accentArgb))
-        if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-            body.addView(text("This widget's provider"))
-            provider =
-                Spinner(this).apply {
-                    adapter =
-                        ArrayAdapter(
-                            this@SettingsActivity,
-                            android.R.layout.simple_spinner_dropdown_item,
-                            ProviderId.entries.map { it.title },
-                        )
-                    setSelection(savedInstanceState?.getInt("provider") ?: store.widgetProvider(widgetId).ordinal)
-                }
-            body.addView(provider)
-        }
         body.addView(text("Appearance and stale threshold apply to all widgets and the dashboard.", 12f))
-        body.addView(text("Accent · six hex digits (default 2196F3)"))
+        body.addView(text("Accent · six hex digits (PhantomShell blue ${TerminalTheme.DEFAULT_ACCENT_HEX})"))
         accent =
             EditText(this).apply {
                 isSingleLine = true
@@ -110,7 +94,7 @@ class SettingsActivity : Activity() {
                 .trim()
                 .removePrefix("#")
         if (!hex.matches(Regex("[0-9a-fA-F]{6}"))) {
-            accent.error = "Use six hex digits, e.g. 2196F3"
+            accent.error = "Use six hex digits, e.g. ${TerminalTheme.DEFAULT_ACCENT_HEX}"
             return
         }
         val minutes = stale.text.toString().toIntOrNull()
@@ -120,7 +104,6 @@ class SettingsActivity : Activity() {
         }
         store.saveSettings(TerminalTheme(hex, opacity.progress), minutes)
         if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-            store.setWidgetProvider(widgetId, ProviderId.entries[provider.selectedItemPosition])
             QuotaWidget.updateAll(this)
             setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
         }
@@ -132,7 +115,6 @@ class SettingsActivity : Activity() {
             outState.putString("accent", accent.text.toString())
             outState.putInt("opacity", opacity.progress)
             outState.putString("stale", stale.text.toString())
-            if (::provider.isInitialized) outState.putInt("provider", provider.selectedItemPosition)
         }
         super.onSaveInstanceState(outState)
     }

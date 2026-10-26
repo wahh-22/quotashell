@@ -19,14 +19,13 @@ class SnapshotStore(
             SnapshotCodec.decode(it, prefs.getString("snapshot.${it.name}", null))
         }
 
-    fun theme() = TerminalTheme(prefs.getString("accent", "2196F3") ?: "2196F3", prefs.getInt("opacity", 90))
+    fun theme() =
+        TerminalTheme(
+            prefs.getString("accent", TerminalTheme.DEFAULT_ACCENT_HEX) ?: TerminalTheme.DEFAULT_ACCENT_HEX,
+            prefs.getInt("opacity", 90),
+        )
 
     fun staleMinutes() = RefreshPolicy.staleMinutes(if (prefs.contains("staleMinutes")) prefs.getInt("staleMinutes", 0) else null)
-
-    fun widgetProvider(id: Int): ProviderId =
-        ProviderId.entries.firstOrNull {
-            it.name == prefs.getString("widget.$id", null)
-        } ?: ProviderId.CODEX
 
     /** Partial updates are allowed; omitted providers retain their snapshot. */
     fun saveSnapshots(snapshots: List<ProviderSnapshot>) {
@@ -50,14 +49,7 @@ class SnapshotStore(
         changed()
     }
 
-    fun setWidgetProvider(
-        id: Int,
-        provider: ProviderId,
-    ) {
-        prefs.edit().putString("widget.$id", provider.name).apply()
-        changed()
-    }
-
+    /** Removes the per-widget provider key written by earlier single-provider builds. */
     fun deleteWidget(id: Int) {
         prefs.edit().remove("widget.$id").apply()
     }

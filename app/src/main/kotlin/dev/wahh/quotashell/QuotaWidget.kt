@@ -6,17 +6,19 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
 import android.net.Uri
-import android.view.View
+import android.os.Build
+import android.os.Bundle
+import android.util.SizeF
 import android.widget.RemoteViews
-import dev.wahh.quotashell.core.ProviderId
-import dev.wahh.quotashell.core.present
+import dev.wahh.quotashell.core.board
 import java.time.Instant
+import java.time.ZoneId
 
-/** No network work in a BroadcastReceiver. Refresh opens the dashboard's integration point. */
+/**
+ * One widget showing every provider, drawn as a PhantomShell-style board. No network work in a
+ * BroadcastReceiver; refresh opens the dashboard's integration point.
+ */
 class QuotaWidget : AppWidgetProvider() {
     override fun onUpdate(
         context: Context,
@@ -57,34 +59,36 @@ class QuotaWidget : AppWidgetProvider() {
             id: Int,
         ) {
             val store = (context.applicationContext as QuotaApplication).store
-            val theme = store.theme()
-            val provider = store.widgetProvider(id)
-            val snapshot = store.snapshots().first { it.provider == provider }
-            val display = present(snapshot, Instant.now(), store.staleMinutes() * 60L)
+            val content = board(store.snapshots(), Instant.now(), store.staleMinutes() * 60L, ZoneId.systemDefault())
+            val (widthDp, heightDp) = sizeDp(manager.getAppWidgetOptions(id))
             val views = RemoteViews(context.packageName, R.layout.widget_quota)
-            views.setInt(R.id.widget_root, "setBackgroundColor", theme.backgroundArgb)
-            views.setTextViewText(R.id.widget_title, "> ${display.title}")
-            views.setTextColor(R.id.widget_title, theme.accentArgb)
-            views.setTextViewText(R.id.widget_state, "${display.state} · ${display.age}")
-            views.setViewVisibility(R.id.widget_empty, if (display.windows.isEmpty()) View.VISIBLE else View.GONE)
-            views.removeAllViews(R.id.widget_windows)
-            for (window in display.windows) {
-                val row = RemoteViews(context.packageName, R.layout.widget_window)
-                row.setTextViewText(R.id.window_label, "${window.title} · ${window.usage}")
-                row.setTextViewText(R.id.window_reset, window.reset)
-                row.setViewVisibility(R.id.window_bar, if (window.progress == null) View.GONE else View.VISIBLE)
-                window.progress?.let {
-                    row.setImageViewBitmap(R.id.window_bar, barBitmap(it, theme.accentArgb))
-                }
-                views.addView(R.id.widget_windows, row)
-            }
-            views.setViewVisibility(R.id.widget_inventory, if (provider == ProviderId.CODEX) View.VISIBLE else View.GONE)
-            views.setTextViewText(R.id.widget_inventory, display.resetInventory ?: "Codex resets available: Unknown")
-            views.setOnClickPendingIntent(R.id.widget_title, activityIntent(context, id, "dashboard"))
-            views.setOnClickPendingIntent(R.id.widget_state, activityIntent(context, id, "connections"))
+            views.setImageViewBitmap(R.id.widget_board, PhantomBoardRenderer.render(context, content, store.theme(), widthDp, heightDp))
+            views.setContentDescription(
+                R.id.widget_board,
+                content.cards.joinToString(". ") { card ->
+                    (listOf(card.name, card.status) + card.rows.map { "${it.label} ${it.usage}" }).joinToString(", ")
+                },
+            )
+            views.setOnClickPendingIntent(R.id.widget_board, activityIntent(context, id, "dashboard"))
             views.setOnClickPendingIntent(R.id.widget_refresh, activityIntent(context, id, "refresh"))
-            views.setOnClickPendingIntent(R.id.widget_settings, activityIntent(context, id, "settings"))
             manager.updateAppWidget(id, views)
+        }
+
+        /** Portrait size the launcher gave this instance; falls back to the declared default. */
+        private fun sizeDp(options: Bundle): Pair<Float, Float> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val sizes =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        options.getParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES, SizeF::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+                    }
+                sizes?.firstOrNull()?.takeIf { it.width > 0 && it.height > 0 }?.let { return it.width to it.height }
+            }
+            val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+            val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)
+            return if (width > 0 && height > 0) width.toFloat() to height.toFloat() else 250f to 180f
         }
 
         private fun activityIntent(
@@ -93,15 +97,9 @@ class QuotaWidget : AppWidgetProvider() {
             action: String,
         ): PendingIntent {
             val intent =
-                if (action == "connections") {
-                    Intent(context, ConnectionsActivity::class.java)
-                } else if (action == "settings") {
-                    Intent(context, SettingsActivity::class.java).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
-                } else {
-                    Intent(context, MainActivity::class.java).apply {
-                        this.action = if (action == "refresh") MainActivity.ACTION_REFRESH else Intent.ACTION_MAIN
-                        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    }
+                Intent(context, MainActivity::class.java).apply {
+                    this.action = if (action == "refresh") MainActivity.ACTION_REFRESH else Intent.ACTION_MAIN
+                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 }
             intent.data = Uri.parse("quotashell://widget/$id/$action")
             return PendingIntent.getActivity(
@@ -110,18 +108,6 @@ class QuotaWidget : AppWidgetProvider() {
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-        }
-
-        /** Tiny bitmap supports arbitrary accents on RemoteViews even before API 31. */
-        private fun barBitmap(
-            percent: Int,
-            accent: Int,
-        ): Bitmap {
-            val bitmap = Bitmap.createBitmap(400, 8, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            canvas.drawColor(0xFF506070.toInt())
-            canvas.drawRect(0f, 0f, 4f * percent, 8f, Paint().apply { color = accent })
-            return bitmap
         }
     }
 }

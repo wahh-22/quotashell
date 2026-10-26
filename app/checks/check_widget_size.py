@@ -42,7 +42,7 @@ class WidgetSizeTest(unittest.TestCase):
         self.assertLess(dp(self.attr("minResizeHeight")), dp(self.attr("minHeight")))
 
     def test_layout_has_no_tall_fixed_rows(self):
-        for name in ("widget_quota.xml", "widget_window.xml"):
+        for name in ("widget_quota.xml",):
             layout = ET.parse(RES / "layout" / name).getroot()  # noqa: S314
             for node in layout.iter():
                 height = node.get(ANDROID + "layout_height")
