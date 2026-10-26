@@ -27,6 +27,7 @@ internal class ThemeEditor(
     private val window: Spinner
     private val button: Spinner
     private val notification: Spinner
+    private val animation: Spinner
     private val caps: Switch
     private val offset: EditText
     private val initialOffset = original.fontSizeOffset.toString()
@@ -52,6 +53,13 @@ internal class ThemeEditor(
                 "Notification shape",
                 PhantomTheme.NOTIFICATION_SHAPES,
                 state?.getString("notificationShape") ?: original.notificationShape,
+            )
+        animation =
+            shapes(
+                body,
+                "Notification animation (widget burst)",
+                PhantomTheme.NOTIFICATION_ANIMATIONS,
+                state?.getString("notificationAnimation") ?: original.notificationAnimation,
             )
         caps =
             Switch(activity).apply {
@@ -131,7 +139,7 @@ internal class ThemeEditor(
                     if (offset.text.toString() == initialOffset) null else step,
                 )
         }
-        return theme
+        return theme.withNotificationAnimation(animation.selectedItem.toString())
     }
 
     fun saveState(state: Bundle) {
@@ -142,6 +150,7 @@ internal class ThemeEditor(
         state.putString("windowShape", window.selectedItem.toString())
         state.putString("buttonShape", button.selectedItem.toString())
         state.putString("notificationShape", notification.selectedItem.toString())
+        state.putString("notificationAnimation", animation.selectedItem.toString())
         state.putBoolean("allCaps", caps.isChecked)
         state.putString("offset", offset.text.toString())
     }

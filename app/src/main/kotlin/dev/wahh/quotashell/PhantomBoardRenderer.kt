@@ -8,10 +8,14 @@ import android.graphics.Path
 import android.graphics.Typeface
 import dev.wahh.quotashell.core.Board
 import dev.wahh.quotashell.core.BoardCard
+import dev.wahh.quotashell.core.DONUT_START_DEGREES
 import dev.wahh.quotashell.core.PhantomTheme
+import dev.wahh.quotashell.core.donutSweep
+import dev.wahh.quotashell.core.glitchSeed
+import dev.wahh.quotashell.core.glitchSlices
 import kotlin.math.min
 
-/** A static RemoteViews bitmap: all board colors and presentation options come from the export. */
+/** One bounded bitmap per update; burst frames never share a RemoteViews payload. */
 object PhantomBoardRenderer {
     private const val PAD = 6f
     private const val GAP = 5f
@@ -23,13 +27,12 @@ object PhantomBoardRenderer {
         theme: PhantomTheme,
     ) {
         val extra = theme.fontSizeOffset.coerceAtLeast(0).toFloat()
-        val header = 28f + extra * 2
-        val footer = 13f + extra
-        val cardTop = 32f + extra * 2
-        val row = 14f + extra * 2
-        val note = 11f + extra * 2
 
-        fun cardHeight(card: BoardCard) = cardTop + row * maxOf(card.rows.size, 1) + (if (card.note != null) note else 0f) + 6f
+        // Leaves room below the subtitle baseline (PAD + 22) so the divider never crosses it.
+        val header = 28f + extra * 2
+        val footer = 12f + extra
+        val cardTop = 28f + extra * 2
+        val cardHeight = 99f + extra * 8
     }
 
     fun render(
@@ -38,6 +41,7 @@ object PhantomBoardRenderer {
         theme: PhantomTheme,
         widthDp: Float,
         heightDp: Float,
+        burstFrame: Int = 0,
     ): Bitmap {
         if (regular == null) {
             regular = Typeface.createFromAsset(context.assets, "fonts/AdwaitaMono-Regular.ttf")
@@ -52,13 +56,21 @@ object PhantomBoardRenderer {
                 Bitmap.Config.ARGB_8888,
             )
         val metrics = Metrics(theme)
-        val needed =
-            PAD * 2 + metrics.header + metrics.footer + board.cards.sumOf { metrics.cardHeight(it).toDouble() }.toFloat() +
-                GAP * (board.cards.size - 1)
-        val fit = min(1f, heightDp / needed)
+        val needed = PAD * 2 + metrics.header + metrics.footer + metrics.cardHeight
+        val fit = min(1f, min(heightDp / needed, widthDp / 380f))
         val canvas = Canvas(bitmap)
         canvas.scale(density * fit, density * fit)
-        Drawing(canvas, theme, metrics, widthDp / fit, heightDp / fit).draw(board)
+        val drawing = Drawing(canvas, theme, metrics, widthDp / fit, heightDp / fit, burstFrame)
+        drawing.draw(board)
+        // Draw clipped, translated slices from the same scene: no additional large bitmap.
+        glitchSlices(board.glitchSeed() + burstFrame).forEach { slice ->
+            canvas.save()
+            val top = slice.topFraction * heightDp / fit
+            canvas.clipRect(0f, top, widthDp / fit, top + slice.heightFraction * heightDp / fit)
+            canvas.translate(slice.offset * (if (burstFrame == 0) 0.25f else 1f), 0f)
+            drawing.draw(board)
+            canvas.restore()
+        }
         return bitmap
     }
 
@@ -68,6 +80,7 @@ object PhantomBoardRenderer {
         private val metrics: Metrics,
         private val width: Float,
         private val height: Float,
+        private val burstFrame: Int,
     ) {
         private val accent = theme.color("accent").argb
         private val fill = theme.color("window").argb
@@ -94,19 +107,13 @@ object PhantomBoardRenderer {
                 decoration,
             )
             header(board)
-            var top = PAD + metrics.header
-            val extra =
-                (
-                    height - PAD * 2 - metrics.header - metrics.footer -
-                        board.cards.sumOf { metrics.cardHeight(it).toDouble() }.toFloat() -
-                        GAP * (board.cards.size - 1)
-                ).coerceAtLeast(0f)
-            val spread = extra / board.cards.size.coerceAtLeast(1)
-            board.cards.forEach { card ->
-                val bottom = top + metrics.cardHeight(card) + spread
-                card(card, top, bottom)
-                top = bottom + GAP
+            val top = PAD + metrics.header
+            val columnWidth = (width - PAD * 2 - GAP * 2) / 3
+            board.cards.forEachIndexed { index, card ->
+                val left = PAD + index * (columnWidth + GAP)
+                card(card, left, left + columnWidth, top, height - PAD - metrics.footer)
             }
+            scanlines()
             text(board.stamp, PAD + 4, height - PAD - 2, 7.5f, secondary)
             val alerts = if (board.alertCount == 0) "All links nominal" else "Alerts ${board.alertCount}"
             text(alerts, width - PAD - 12, height - PAD - 2, 7.5f, if (board.alertCount == 0) secondary else warning, right = true)
@@ -148,11 +155,11 @@ object PhantomBoardRenderer {
 
         private fun card(
             card: BoardCard,
+            left: Float,
+            right: Float,
             top: Float,
             bottom: Float,
         ) {
-            val left = PAD + 2
-            val right = width - PAD - 2
             val e = metrics.extra
             val path = panelPath(left, top, right, bottom, theme.renderWindowShape)
             fill(path, fill)
@@ -160,56 +167,54 @@ object PhantomBoardRenderer {
             stroke(path, if (card.alert) warning else border, if (card.alert) 2.2f else 1.1f)
             val codeY = if (theme.renderWindowShape == "TABBED") top + 4 + e else top + 10 + e
             text(card.code, right - 3, codeY, 6f, decoration, right = true)
-            text(card.name, left + 7, top + 15 + e, 12f, primary, heavy = true)
-            text(card.status, left + 7, top + 24 + e * 2, 7f, secondary)
-            if (card.alert) alert(right - 14, top + 13 + e, 8f)
-            val labelX = left + 7
-            val barLeft = left + 42 + e * 4
-            val resetRight = right - 6
-            val percentRight = resetRight - 74 - e * 6
-            val barRight = percentRight - 30 - e * 2
-            var y = top + metrics.cardTop
+            text(card.name, left + 5, top + 14 + e, 10f, primary, heavy = true, maxWidth = right - left - 17)
+            // Keep state first: age is expendable when a narrow column is ellipsized.
+            text(card.status, left + 5, top + 24 + e * 2, 7f, secondary, maxWidth = right - left - 10)
+            if (card.alert) alert(right - 11, top + 8 + e, 6f)
+            val y = top + metrics.cardTop
             if (card.rows.isEmpty()) {
-                val hint =
-                    if (card.status.equals(
-                            "Not connected",
-                            ignoreCase = true,
-                        )
-                    ) {
-                        "No link · open QuotaShell > Connections"
-                    } else {
-                        "No reported quota windows"
-                    }
-                text(hint, labelX, y + 8 + e, 7.5f, secondary)
-                y += metrics.row
+                text("No quota data", (left + right) / 2, y + 25, 8f, secondary, center = true, maxWidth = right - left - 10)
             }
-            card.rows.forEach { row ->
-                text(row.label, labelX, y + 8.5f + e, 9f, secondary, heavy = true)
-                segments(barLeft, y + 3.5f + e, barRight, row.percent, row.hot)
-                text(row.usage, percentRight, y + 8.5f + e, 9f, if (row.hot) warning else primary, heavy = true, right = true)
-                text(row.reset, resetRight, y + 8.5f + e, 8f, secondary, right = true)
-                y += metrics.row
+            val slot = (right - left - 6) / card.rows.size.coerceAtLeast(1)
+            card.rows.forEachIndexed { index, row ->
+                val cx = left + 3 + slot * (index + 0.5f)
+                val radius = min(15f + e, slot / 2 - 3)
+                val cy = y + radius + 2
+                val color = if (row.hot) warning else accent
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 2.5f
+                paint.color = border
+                canvas.drawCircle(cx, cy, radius, paint)
+                paint.color = color
+                canvas.drawArc(
+                    cx - radius,
+                    cy - radius,
+                    cx + radius,
+                    cy + radius,
+                    DONUT_START_DEGREES,
+                    donutSweep(row.percent),
+                    false,
+                    paint,
+                )
+                text(row.usage, cx, cy + 3, 8f, if (row.hot) warning else primary, heavy = true, center = true, maxWidth = radius * 2 - 3)
+                val labelY = cy + radius + 10 + e
+                text(row.label, cx, labelY, 7.5f, secondary, heavy = true, center = true, maxWidth = slot - 2)
+                val date = row.reset.substringBeforeLast(' ', row.reset)
+                val time = row.reset.substringAfterLast(' ', "")
+                text(date, cx, labelY + 9 + e, 6.5f, secondary, center = true, maxWidth = slot - 2)
+                text(time, cx, labelY + 17 + e * 2, 7f, secondary, center = true, maxWidth = slot - 2)
             }
-            card.note?.let { text(it, labelX, y + 7.5f + e, 7f, secondary) }
+            card.note?.let { text(it, left + 5, bottom - 4, 7f, secondary, maxWidth = right - left - 10) }
         }
 
-        private fun segments(
-            left: Float,
-            top: Float,
-            right: Float,
-            percent: Int?,
-            hot: Boolean,
-        ) {
-            val count = 20
-            val gap = 1.2f
-            val w = ((right - left) - gap * (count - 1)) / count
-            if (w <= 0) return
-            val filled = percent?.let { (it.coerceIn(0, 100) * count + 99) / 100 } ?: 0
+        private fun scanlines() {
             paint.style = Paint.Style.FILL
-            for (i in 0 until count) {
-                paint.color = if (i < filled) (if (hot) warning else accent) else border
-                val x = left + i * (w + gap)
-                canvas.drawRect(x, top, x + w, top + 6, paint)
+            paint.color = decoration
+            paint.alpha = ((decoration ushr 24) * 0.07f).toInt()
+            var y = 2f
+            while (y < height) {
+                canvas.drawRect(PAD, y, width - PAD, y + 0.35f, paint)
+                y += 4f
             }
         }
 
@@ -321,6 +326,7 @@ object PhantomBoardRenderer {
             heavy: Boolean = false,
             right: Boolean = false,
             center: Boolean = false,
+            maxWidth: Float? = null,
         ) {
             paint.style = Paint.Style.FILL
             paint.color = color
@@ -333,10 +339,23 @@ object PhantomBoardRenderer {
                     else -> Paint.Align.LEFT
                 }
             val content = theme.displayText(value)
-            val available = if (right || center) x - PAD else width - x - PAD
+            val available = maxWidth ?: if (right || center) x - PAD else width - x - PAD
             var cut = content
             while (cut.isNotEmpty() && paint.measureText(cut) > available) cut = cut.dropLast(1)
             if (cut != content && cut.isNotEmpty()) cut = cut.dropLast(1) + "…"
+            // RGB split only on titles: on small labels it smears the glyphs into illegibility.
+            if (heavy && size >= 10f) {
+                val offset = if (burstFrame == 0) 0.4f else 0.8f + burstFrame * 0.4f
+                paint.color = accent
+                paint.alpha = ((accent ushr 24) * 0.45f).toInt()
+                canvas.drawText(cut, x - offset, baseline, paint)
+                paint.color = warning
+                paint.alpha = ((warning ushr 24) * 0.4f).toInt()
+                canvas.drawText(cut, x + offset, baseline + 0.3f, paint)
+                paint.color = decoration
+                canvas.drawText(cut, x, baseline - 0.3f, paint)
+                paint.color = color
+            }
             canvas.drawText(cut, x, baseline, paint)
         }
     }

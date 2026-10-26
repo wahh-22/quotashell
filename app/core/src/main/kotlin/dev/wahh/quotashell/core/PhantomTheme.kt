@@ -18,6 +18,10 @@ class PhantomTheme private constructor(
     val windowShape: String get() = fields.getValue("windowShape") as String
     val buttonShape: String get() = fields.getValue("buttonShape") as String
     val notificationShape: String get() = fields.getValue("notificationShape") as String
+    val notificationAnimation: String get() = fields["notificationAnimation"] as? String ?: "DEFAULT"
+
+    fun withNotificationAnimation(value: String): PhantomTheme = PhantomTheme(fields + ("notificationAnimation" to value))
+
     val isAllCaps: Boolean get() = fields.getValue("isAllCaps") as Boolean
     val fontSizeOffset: Int get() = (fields.getValue("fontSizeOffset") as Number).toDouble().coerceIn(-4.0, 6.0).toInt()
 
@@ -81,6 +85,7 @@ class PhantomTheme private constructor(
         val COLOR_SLOTS = listOf("outline", "window", "text", "subtext", "subtext2", "accent", "notifications", "background", "vignette")
         val WINDOW_SHAPES = listOf("TABBED", "BEVEL", "SQUARED")
         val BUTTON_SHAPES = listOf("SQUARED", "BEVEL")
+        val NOTIFICATION_ANIMATIONS = listOf("GLITCH", "FADE", "DEFAULT", "NONE")
         val NOTIFICATION_SHAPES = listOf("INVERTED TRIANGLE", "TRIANGLE", "CIRCLE", "SQUARE", "NONE")
 
         fun parse(json: String): PhantomTheme =

@@ -76,13 +76,13 @@ class WidgetBoardTest {
                 resetInventoryCount = 0,
             )
         val card = board(listOf(counted), now, 3600, bogota).cards[0]
-        assertEquals("RESETS AVAILABLE · 0", card.note)
+        assertEquals("RESETS · 0", card.note)
         assertEquals("N/A", card.rows.single().usage)
         assertNull(card.rows.single().percent)
         assertEquals("--", card.rows.single().reset)
         assertFalse(card.rows.single().hot)
         val unknown = board(listOf(counted.copy(resetInventoryCount = null)), now, 3600, bogota).cards[0]
-        assertEquals("RESETS AVAILABLE · UNKNOWN", unknown.note)
+        assertEquals("RESETS · UNKNOWN", unknown.note)
         val claude = board(listOf(ProviderSnapshot(ProviderId.CLAUDE, Connection.CONNECTED, now)), now, 3600, bogota)
         assertNull(claude.cards[1].note)
     }

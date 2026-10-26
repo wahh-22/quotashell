@@ -94,7 +94,7 @@ private fun card(
         }
     val note =
         if (snapshot.provider == ProviderId.CODEX && snapshot.capturedAt != null) {
-            "Resets available · " + (snapshot.resetInventoryCount?.toString() ?: "Unknown")
+            "Resets · " + (snapshot.resetInventoryCount?.toString() ?: "Unknown")
         } else {
             null
         }

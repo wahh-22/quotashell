@@ -2,8 +2,8 @@
 
 Native Kotlin Android dashboard and launcher widget (`dev.wahh.quotashell`, Android 8+).
 Dark monospace panels and a single PhantomShell-style board showing OpenAI/Codex,
-Claude and OpenCode Go together. Import a PhantomShell theme or edit its widget colors,
-shapes and typography.
+Claude and OpenCode Go together in three compact columns with donut quota charts.
+Import a PhantomShell theme or edit its widget colors, shapes, typography and glitch burst.
 
 Direct HTTPS quota reads support manually entered Codex OAuth access tokens, Claude
 OAuth access tokens with usage/profile scope, and OpenCode Go API keys. Credentials
@@ -188,7 +188,12 @@ previous-command differential baseline: **N/A**. No tests were omitted or ignore
 2. Import or edit a theme (see below), and set a stale threshold (30–1440 min).
 3. In PhantomShell or another widget-capable launcher, add **QuotaShell · all providers**
    and Save; Cancel does not add the widget. The default footprint is about 4×2 cells;
-   resize for readability. All three providers always appear on the board.
+   resize for readability. All three providers always appear side by side, in Codex,
+   Claude, OpenCode Go order. The natural design is about 400×148 dp (roughly half the
+   previous board height); existing instances retain their launcher-assigned size.
+   Each reported window has a donut with used percent, a short label and local reset
+   below it. Unknown usage shows an empty ring and N/A; 85%+ uses the alert color.
+   Codex reset inventory and reconnect/error/stale indicators remain visible.
 4. Tap the board for the dashboard or the Sync area for dashboard refresh. Open Settings
    from the dashboard to reconfigure all widgets together.
 
@@ -223,17 +228,29 @@ adds row spacing, and the entire board still scales to fit the widget's bounds.
 | --- | --- |
 | `window` / `outline` | Panel fills / outlines and dividers; each uses its own alpha. |
 | `text` / `subtext` / `subtext2` | Primary text / secondary text and labels / stripes, corner marks and codes. |
-| `accent` / `notifications` | Usage bars and Sync / alert glyphs, alert-card highlight and hot usage (85%+). |
+| `accent` / `notifications` | Donut rings and Sync / alert glyphs, alert-card highlight and hot usage (85%+). |
 | `background` | Outer frame fill, including independent transparency. |
 | `windowShape` | `TABBED`: tab-labelled chamfered cards; `BEVEL`: chamfers without tabs; `SQUARED` and other values: rectangles. |
 | `buttonShape` | `SQUARED`: bracketed Sync; `BEVEL`: chamfered outline. Other values fall back to brackets. |
 | `notificationShape` | `INVERTED TRIANGLE`, `TRIANGLE`, `CIRCLE`, `SQUARE`, `NONE`. NONE hides the glyph, not the alert-card highlight. Unknown values use an inverted triangle. |
 | `isAllCaps` / `fontSizeOffset` | Uppercase versus natural-case board text / a bounded step added to every text size. |
+| `notificationAnimation` | `GLITCH`: brief burst on changed content or new alerts. `FADE`, `DEFAULT`, `NONE` and unknown values disable the burst. Editable in Settings. |
 
-Unknown shape strings remain unchanged on export. Launcher-only keys (including
-animations, toolkit, status bar, keyboard, immersive mode, bottom text, username,
-blur and snap-to-grid) are retained but do not affect the widget. A launcher widget is
-a static RemoteViews bitmap: PhantomShell animations cannot run inside this board.
+Subtle scanlines, chromatic title offsets and horizontal slices give the board a
+static glitch style, deterministic for identical content (age-only updates do not
+change the seed). With `notificationAnimation=GLITCH`, changed data or increased alerts
+trigger three frames 150 ms apart, then a clean/static-styled frame at about 450 ms.
+Age-only updates and the first render after process start do not burst. Android may
+coalesce updates or end the app process, so launcher playback is best effort, not a
+continuous animation. There are no wake locks, foreground services or looping views;
+each RemoteViews update contains only one bounded bitmap.
+
+To disable bursts, choose **Notification animation → NONE** in the theme editor and
+Save, or enable Android's **Remove animations** (animator duration scale 0). This keeps
+the static styling. Unknown animation and shape strings remain unchanged on export.
+Other launcher-only keys (including button/window animations, toolkit, status bar,
+keyboard, immersive mode, bottom text, username, blur and snap-to-grid) are retained
+but do not affect the widget.
 `vignette` can be edited and round-tripped but is not rendered; `vignetteAngle` is
 also export-only. These options describe widget approximations, not a reproduction
 of the launcher's internal layout engine or proof of its per-field enum mappings.

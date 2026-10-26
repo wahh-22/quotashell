@@ -34,7 +34,7 @@ class WidgetSizeTest(unittest.TestCase):
         self.assertLessEqual(int(self.attr("targetCellWidth")), 4)
         self.assertLessEqual(int(self.attr("targetCellHeight")), 2)
         self.assertLessEqual(dp(self.attr("minWidth")), 180)
-        self.assertLessEqual(dp(self.attr("minHeight")), 110)
+        self.assertLessEqual(dp(self.attr("minHeight")), 90)
 
     def test_user_can_shrink_below_default(self):
         self.assertEqual("horizontal|vertical", self.attr("resizeMode"))
@@ -66,6 +66,19 @@ class ThemeWiringTest(unittest.TestCase):
             self.assertIn("theme." + option, renderer)
         self.assertIn("store.phantomTheme()", self.source("QuotaWidget.kt"))
         self.assertIn("allCaps = false", self.source("QuotaWidget.kt"))
+
+    def test_compact_donuts_and_deterministic_glitch_are_wired(self):
+        renderer = self.source("PhantomBoardRenderer.kt")
+        for symbol in ("donutSweep", "glitchSlices", "glitchSeed", "drawArc", "scanlines", "columnWidth"):
+            self.assertIn(symbol, renderer)
+        self.assertNotIn("private fun segments", renderer)
+
+    def test_burst_uses_separate_updates_and_respects_animation_preferences(self):
+        widget = self.source("QuotaWidget.kt")
+        for symbol in ("shouldGlitchBurst", "ANIMATOR_DURATION_SCALE", "Handler(Looper.getMainLooper())", "postDelayed", "notificationAnimation"):
+            self.assertIn(symbol, widget)
+        self.assertIn("NOTIFICATION_ANIMATIONS", self.source("ThemeEditor.kt"))
+        self.assertIn("withNotificationAnimation", self.source("ThemeEditor.kt"))
 
     def test_theme_document_actions_and_nonsecret_storage_are_wired(self):
         settings = self.source("SettingsActivity.kt") + self.source("ThemeDocumentIo.kt")
