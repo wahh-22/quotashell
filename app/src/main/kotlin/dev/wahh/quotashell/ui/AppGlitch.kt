@@ -145,7 +145,11 @@ private class HudMotion(
         val views = mutableListOf<TextView>()
 
         fun collect(view: View) {
-            if (!view.isShown || view is EditText || view is CompoundButton) return
+            if (!view.isShown || view is EditText || view is CompoundButton || view is ThemedInput ||
+                view.isClickable || view.isFocused || view.isPressed
+            ) {
+                return
+            }
             if (view is ViewGroup) {
                 for (index in 0 until view.childCount) collect(view.getChildAt(index))
             } else if (view is TextView && view.width > 0 && view.height > 0 &&
@@ -253,7 +257,7 @@ private class HudMotion(
         } else {
             for ((row, entry) in changed.entries.withIndex()) {
                 val (view, values) = entry
-                if (!view.isShown || !view.getGlobalVisibleRect(clip)) continue
+                if (!view.isShown || view.isClickable || view.isFocused || view.isPressed || !view.getGlobalVisibleRect(clip)) continue
                 // Render a detached native label: originals and accessibility text never scramble.
                 val proxy =
                     TextView(activity).apply {

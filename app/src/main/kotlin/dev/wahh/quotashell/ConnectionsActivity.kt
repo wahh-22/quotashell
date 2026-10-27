@@ -3,65 +3,63 @@ package dev.wahh.quotashell
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.text.InputType
 import android.view.View
 import android.view.WindowManager
-import android.view.inputmethod.EditorInfo
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
-import android.widget.CheckBox
-import android.widget.EditText
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Spinner
-import android.widget.Toast
+import android.widget.Switch
+import android.widget.TextView
 import dev.wahh.quotashell.core.*
-import dev.wahh.quotashell.core.ui.hudStatus
+import dev.wahh.quotashell.core.ui.*
+import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneId
 
-/** Manual entry only. Never preload, reveal, autofill, save hierarchy state or pass credentials. */
+/** Manual entry only. Never preload, autofill, save hierarchy state or pass credentials. */
 class ConnectionsActivity : Activity() {
     private val services get() = application as QuotaApplication
-    private val drafts = mutableListOf<EditText>()
+    private val drafts = mutableListOf<ThemedInput>()
     private var displayedSnapshots = emptyList<ProviderSnapshot>()
     private val onChange: () -> Unit = {
         val snapshotChanged = displayedSnapshots != services.store.snapshots()
         updateStates()
         if (snapshotChanged) window.decorView.post { glitchAppElements() }
     }
-    private val states = mutableMapOf<ProviderId, android.widget.TextView>()
+    private val states = mutableMapOf<ProviderId, TextView>()
     private val alerts = mutableMapOf<ProviderId, View>()
+    private val clearPasteState = mutableListOf<() -> Unit>()
     private var organizationPicker: LinearLayout? = null
     private var renderedOrganizations: ClaudeOrganizationState? = null
-    private var claudeMode: Spinner? = null
+    private var claudeKind = ClaudeCredentialKind.OAUTH_TOKEN
+    private lateinit var feedback: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        claudeKind = services.claudeCredentialKind()
         val body = panel(code = "LINK-00")
         body.addView(hudHeader("CONNECTIONS"))
         body.addView(text("◢◤◢◤ // SECURE LINK CONSOLE", 18f))
         body.addView(
-            text(
-                "Enter credentials only on this device. No official login or OAuth token renewal is provided. Returned Claude session-cookie renewals are retained only for the current connection. Never send credentials in chat.",
-                13f,
-            ),
+            text("Enter credentials only on this device. No official login or OAuth token renewal. Never send credentials in chat.", 13f),
         )
+        feedback = text("").apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        body.addView(feedback)
+        ProviderId.entries.forEach { body.addView(providerCard(it)) }
         body.addView(
-            text(
-                "Expiry time is unknown. Refresh detects rejected credentials (HTTP 401; also ordinary claude.ai web 403, not Cloudflare challenges). Permission, rate limit and network errors do not prove expiry. Android may delay checks.",
-                13f,
-            ),
-        )
-        val notify =
-            CheckBox(this).apply {
+            Switch(this).apply {
                 setText(R.string.notify_opt_in)
+                minimumHeight = dp(48)
+                minHeight = dp(48)
+                layoutParams = LinearLayout.LayoutParams(-1, -2)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                contentDescription = "Credential expiry notifications"
                 isChecked = services.expiryNotifications.optedIn
-                setTextColor(android.graphics.Color.WHITE)
                 setOnCheckedChangeListener { _, checked ->
                     services.expiryNotifications.optedIn = checked
                     if (checked && Build.VERSION.SDK_INT >= 33 &&
@@ -70,8 +68,14 @@ class ConnectionsActivity : Activity() {
                         requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 10)
                     }
                 }
-            }
-        body.addView(notify)
+            },
+        )
+        body.addView(
+            text(
+                "Warn when a refresh detects rejected credentials. Expiry time is unknown; Android may delay checks. Permission and network errors do not prove expiry.",
+                13f,
+            ),
+        )
         body.addView(
             button("Notification permission / channel settings") {
                 startActivity(
@@ -81,240 +85,266 @@ class ConnectionsActivity : Activity() {
                 )
             },
         )
-        for (provider in ProviderId.entries) {
-            val card = panel(code = "LINK-0${provider.ordinal + 1}")
-            card.addView(text(provider.title.uppercase(java.util.Locale.ROOT), 19f))
-            alerts[provider] = alertGlyph().also { card.addView(it) }
-            states[provider] = text("").also { card.addView(it) }
-            card.addView(
-                text(
-                    when (provider) {
-                        ProviderId.CODEX -> "Manual Codex OAuth access token (not an OpenAI API key). Optional account/workspace ID below."
-                        ProviderId.CLAUDE -> "Choose OAuth token (user:profile scope) or a claude.ai sessionKey. Inference-only/setup-token and API keys cannot read usage."
-                        ProviderId.OPENCODE_GO -> "Manual OpenCode Go provider API key from your OpenCode account."
-                    },
-                    13f,
-                ),
-            )
-            val token = secretField("New access token / API key")
-            val mode = if (provider == ProviderId.CLAUDE) claudeModeSelector(card, token) else null
-            card.addView(token)
-            if (provider == ProviderId.CLAUDE) {
-                organizationPicker =
-                    LinearLayout(this)
-                        .apply {
-                            orientation = LinearLayout.VERTICAL
-                            isSaveEnabled = false
-                            visibility = View.GONE
-                        }.also { card.addView(it) }
-            }
-            val account = if (provider == ProviderId.CODEX) secretField("Optional ChatGPT account ID").also { card.addView(it) } else null
-            card.addView(
-                button("Save / replace and refresh") {
-                    try {
-                        val kind =
-                            if (mode?.selectedItemPosition ==
-                                1
-                            ) {
-                                ClaudeCredentialKind.SESSION_KEY
-                            } else {
-                                ClaudeCredentialKind.OAUTH_TOKEN
-                            }
-                        val credential = ManualCredential(token.text.toString(), account?.text?.toString()?.ifEmpty { null }, kind)
-                        services.replaceCredential(provider, credential)
-                        token.text.clear()
-                        account?.text?.clear()
-                        updateStates()
-                        services.refresh {
-                            if (!isDestroyed) {
-                                updateStates()
-                                glitchAppElements()
-                                message(it)
-                            }
-                        }
-                    } catch (_: IllegalArgumentException) {
-                        message(
-                            "Enter a nonempty credential without whitespace or controls. Session cookie values must not contain semicolons, commas or equals signs (except a leading sessionKey=).",
-                        )
-                    } catch (_: Exception) {
-                        message("Secure persistence is unconfirmed. Retry save or removal; do not assume rollback.")
-                    }
-                },
-            )
-            card.addView(
-                button("Remove connection and cached quotas") {
-                    AlertDialog
-                        .Builder(this)
-                        .setTitle("Remove ${provider.title}?")
-                        .setMessage("Removes its credential, quota cache and reconnect notification from this device.")
-                        .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Remove") { _, _ ->
-                            try {
-                                services.replaceCredential(provider, null)
-                                token.text.clear()
-                                account?.text?.clear()
-                                updateStates()
-                            } catch (_: Exception) {
-                                message("Secure storage could not be updated. Try again.")
-                            }
-                        }.show()
-                        .also { dialog ->
-                            val content = dialog.findViewById<android.view.ViewGroup>(android.R.id.content)
-                            if (content != null) {
-                                content.tag = PanelStyle("LINK-DEL")
-                                installPhantomShell(content, openingGlitch = false)
-                            }
-                        }
-                },
-            )
-            body.addView(card)
-        }
         body.addView(
             button("Refresh existing connections") {
+                feedback.setText(R.string.input_refreshing)
                 services.refresh {
                     if (!isDestroyed) {
                         updateStates()
-                        glitchAppElements()
-                        message(it)
+                        feedback.text = it
                     }
                 }
             },
         )
-        body.addView(text("└── LINK-00 // LOCAL INPUT ONLY ─╱", 12f))
         terminalContent(ScrollView(this).apply { addView(body) })
         updateStates()
     }
 
-    private fun claudeModeSelector(
-        card: LinearLayout,
-        token: EditText,
-    ): Spinner {
-        card.addView(text("// CLAUDE CONNECTION MODE", 13f))
-        val labels = listOf("OAuth token", "claude.ai sessionKey")
-        val help =
-            text(
-                "WARNING: sessionKey grants full claude.ai web account access, not just quota reads. Stored encrypted on this device only. Never share it. Usually lasts about 28 days, extended by claude.ai activity; expiry is detected on refresh.\n" +
-                    "On your trusted browser: DevTools > Application/Storage > Cookies > https://claude.ai > sessionKey. Copy only its value (or sessionKey=value), not the whole Cookie header.",
-                13f,
+    private fun providerCard(provider: ProviderId): LinearLayout {
+        val card = panel(code = "LINK-0${provider.ordinal + 1}")
+        card.addView(text(provider.title, 19f))
+        alerts[provider] = alertGlyph().also { card.addView(it) }
+        states[provider] = text("").also { card.addView(it) }
+        val token =
+            ThemedInput(
+                this,
+                "New ${provider.title} credential",
+                "Paste or type a new credential",
+                "Never prefilled · stored encrypted on this device",
+                secret = true,
+                paste = true,
             )
-        val spinner =
-            Spinner(this).apply {
-                isSaveEnabled = false
-                contentDescription = "Claude connection mode"
-                adapter =
-                    object : ArrayAdapter<String>(this@ConnectionsActivity, android.R.layout.simple_spinner_dropdown_item, labels) {
-                        override fun getView(
-                            position: Int,
-                            convertView: View?,
-                            parent: android.view.ViewGroup,
-                        ): View =
-                            this@ConnectionsActivity.text("[ ${labels[position]} ]").apply {
-                                val theme = services.store.phantomTheme()
-                                typeface = HudFont.typeface(this@ConnectionsActivity, false)
-                                setTextColor(theme.color("text").argb)
-                                textSize = (16f + theme.fontSizeOffset).coerceAtLeast(12f)
-                                minHeight = dp(48)
-                            }
-
-                        override fun getDropDownView(
-                            position: Int,
-                            convertView: View?,
-                            parent: android.view.ViewGroup,
-                        ): View = getView(position, convertView, parent)
-                    }
-                setSelection(if (services.claudeCredentialKind() == ClaudeCredentialKind.SESSION_KEY) 1 else 0)
-            }
-        claudeMode = spinner
-        spinner.onItemSelectedListener =
-            object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(
-                    parent: AdapterView<*>?,
-                    view: View?,
-                    position: Int,
-                    id: Long,
-                ) {
-                    token.text.clear()
-                    token.hint = if (position == 1) "[ New claude.ai sessionKey ]" else "[ New OAuth access token ]"
-                    help.visibility = if (position == 1) View.VISIBLE else View.GONE
+        drafts += token
+        if (provider == ProviderId.CLAUDE) {
+            card.addView(
+                ChoiceControl(
+                    this,
+                    "Claude connection mode",
+                    listOf("OAuth token", "claude.ai sessionKey"),
+                    if (claudeKind == ClaudeCredentialKind.SESSION_KEY) "claude.ai sessionKey" else "OAuth token",
+                    segmented = true,
+                ) { label ->
+                    val next = if (label == "OAuth token") ClaudeCredentialKind.OAUTH_TOKEN else ClaudeCredentialKind.SESSION_KEY
+                    val cleared = secretAfterModeChange(claudeKind, next, token.edit.text.toString())
+                    claudeKind = next
+                    token.edit.text.replace(0, token.edit.length(), cleared)
+                    token.hideSecret()
                     updateOrganizationPicker()
+                },
+            )
+            card.addView(
+                text(
+                    "WARNING: sessionKey grants full claude.ai web account access, not just quota reads. Usually about 28 days, extended by site activity; not guaranteed. Treat it as a password.",
+                    13f,
+                ),
+            )
+        }
+        card.addView(token)
+        val account =
+            if (provider == ProviderId.CODEX) {
+                ThemedInput(
+                    this,
+                    "Optional ChatGPT account ID",
+                    "Account / workspace ID",
+                    "Leave empty for the token's default account",
+                    secret = true,
+                ).also {
+                    drafts += it
+                    card.addView(disclosure("Advanced · optional account ID", it))
                 }
-
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            } else {
+                null
             }
-        help.visibility = if (spinner.selectedItemPosition == 1) View.VISIBLE else View.GONE
-        card.addView(spinner)
-        card.addView(help)
-        return spinner
+        if (provider == ProviderId.CLAUDE) {
+            organizationPicker =
+                LinearLayout(this)
+                    .apply {
+                        orientation = LinearLayout.VERTICAL
+                        isSaveEnabled = false
+                        visibility = View.GONE
+                    }.also { card.addView(it) }
+        }
+        card.addView(
+            disclosure(
+                "How to get this",
+                text(
+                    when (provider) {
+                        ProviderId.CODEX -> "On your trusted computer, read an existing Codex OAuth access token:\njq -r '.tokens.access_token' ~/.codex/auth.json\nCopy only the value. Not an OpenAI API key or refresh token. Never send it through chat or adb."
+                        ProviderId.CLAUDE -> "OAuth: use an existing access token with user:profile scope; inference-only/setup-token and API keys cannot read usage.\nWeb: trusted browser > DevTools > Application/Storage > Cookies > https://claude.ai > sessionKey. Copy only its value (or sessionKey=value), never the full Cookie header."
+                        ProviderId.OPENCODE_GO -> "Open the OpenCode Go console on opencode.ai, then your account's key-management page. Copy your provider-issued API key."
+                    },
+                    13f,
+                ),
+            ),
+        )
+        val result = text("").apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        card.addView(result)
+        var busy = false
+        var pastedHash: ByteArray? = null
+        var savedHash: ByteArray? = null
+        val clear =
+            button("Clear clipboard") {
+                val unchanged = savedHash?.contentEquals(clipboardHash()) == true
+                if (canClearClipboard(savedHash != null, true, unchanged, Build.VERSION.SDK_INT) && Build.VERSION.SDK_INT >= 28) {
+                    getSystemService(ClipboardManager::class.java).clearPrimaryClip()
+                    result.setText(R.string.input_clipboard_cleared)
+                } else {
+                    result.setText(R.string.input_clipboard_changed)
+                }
+                savedHash = null
+            }.apply { visibility = View.GONE }
+        lateinit var save: Button
+
+        fun validate() {
+            val validation =
+                credentialField(
+                    token.edit.text.toString(),
+                    kind =
+                        if (provider ==
+                            ProviderId.CLAUDE
+                        ) {
+                            claudeKind
+                        } else {
+                            ClaudeCredentialKind.OAUTH_TOKEN
+                        },
+                )
+            token.validate(validation)
+            val accountValidation = account?.let { accountField(it.edit.text.toString()).also(it::validate) }
+            save.isEnabled = validation.valid && accountValidation?.valid != false && !busy
+            save.alpha = if (save.isEnabled) 1f else 0.45f
+        }
+        save =
+            button("Save & refresh") {
+                busy = true
+                validate()
+                result.setText(R.string.input_saving)
+                try {
+                    val credential =
+                        ManualCredential(
+                            token.edit.text.toString(),
+                            account
+                                ?.edit
+                                ?.text
+                                ?.toString()
+                                ?.ifEmpty { null },
+                            if (provider ==
+                                ProviderId.CLAUDE
+                            ) {
+                                claudeKind
+                            } else {
+                                ClaudeCredentialKind.OAUTH_TOKEN
+                            },
+                        )
+                    val fromPaste = pastedHash?.takeIf { it.contentEquals(clipboardHash()) }
+                    services.replaceCredential(provider, credential)
+                    token.edit.text.clear()
+                    token.hideSecret()
+                    account?.edit?.text?.clear()
+                    savedHash = fromPaste
+                    clear.visibility =
+                        if (canClearClipboard(fromPaste != null, true, true, Build.VERSION.SDK_INT)) View.VISIBLE else View.GONE
+                    result.setText(R.string.input_saved_refreshing)
+                    updateStates()
+                    services.refresh {
+                        if (!isDestroyed) {
+                            busy = false
+                            validate()
+                            updateStates()
+                            result.text = getString(R.string.input_saved_result, it)
+                        }
+                    }
+                } catch (_: IllegalArgumentException) {
+                    busy = false
+                    validate()
+                    result.setText(R.string.input_invalid)
+                } catch (_: Exception) {
+                    busy = false
+                    validate()
+                    result.setText(R.string.input_storage_unconfirmed)
+                }
+            }
+        token.onChanged = {
+            pastedHash = null
+            validate()
+        }
+        account?.onChanged = { validate() }
+        token.onPaste = { pastedHash = clipboardHash() }
+        validate()
+        card.addView(save)
+        card.addView(clear)
+        clearPasteState += {
+            pastedHash = null
+            savedHash = null
+            clear.visibility = View.GONE
+        }
+        card.addView(text("// DANGER ZONE · removes this device's connection", 12f))
+        card.addView(
+            button("Remove connection and cached quotas") {
+                AlertDialog
+                    .Builder(this)
+                    .setTitle("Remove ${provider.title}?")
+                    .setMessage("Removes its credential, quota cache and reconnect notification from this device.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Remove") { _, _ ->
+                        try {
+                            services.replaceCredential(provider, null)
+                            token.edit.text.clear()
+                            account?.edit?.text?.clear()
+                            clear.visibility = View.GONE
+                            result.setText(R.string.input_removed)
+                            updateStates()
+                        } catch (_: Exception) {
+                            result.setText(R.string.input_remove_failed)
+                        }
+                    }.show()
+            }.apply { tag = TextStyle(16f, "notifications") },
+        )
+        return card
+    }
+
+    private fun clipboardHash(): ByteArray? {
+        val clip = getSystemService(ClipboardManager::class.java).primaryClip ?: return null
+        val value = clip.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text ?: return null
+        return MessageDigest.getInstance("SHA-256").digest(value.toString().toByteArray(Charsets.UTF_8))
     }
 
     private fun updateOrganizationPicker() {
         val picker = organizationPicker ?: return
         val state = services.claudeOrganizations()
-        val visible = claudeMode?.selectedItemPosition == 1 && state != null && state.options.size > 1
+        val visible = claudeKind == ClaudeCredentialKind.SESSION_KEY && state != null && state.options.size > 1
         picker.visibility = if (visible) View.VISIBLE else View.GONE
         if (!visible || state === renderedOrganizations) return
         picker.removeAllViews()
         renderedOrganizations = state
         val selected = (state as? ClaudeOrganizationState.Selected)?.organization?.id
+        val options = state!!.options
+        val labels = options.map { "${it.name}\n${it.id}" }
         picker.addView(
-            text(
-                if (selected ==
-                    null
-                ) {
-                    "Choose an organization explicitly to read quotas:"
-                } else {
-                    "Organization selected. Choose another to switch:"
-                },
-                13f,
-            ),
-        )
-        state!!.options.forEach { organization ->
-            picker.addView(
-                button("${if (organization.id == selected) "Selected: " else "Use: "}${organization.name}\n${organization.id}") {
-                    try {
-                        services.selectClaudeOrganization(organization.id)
-                        updateStates()
-                        services.refresh {
-                            if (!isDestroyed) {
-                                updateStates()
-                                message(it)
-                            }
+            ChoiceControl(
+                this,
+                "Choose an organization explicitly to read quotas",
+                labels,
+                options.indexOfFirst { it.id == selected }.takeIf { it >= 0 }?.let { labels[it] } ?: "No organization selected",
+                preserveUnknown = false,
+            ) { label ->
+                val organization = options.getOrNull(labels.indexOf(label)) ?: return@ChoiceControl
+                try {
+                    services.selectClaudeOrganization(organization.id)
+                    updateStates()
+                    services.refresh {
+                        if (!isDestroyed) {
+                            updateStates()
+                            feedback.text = it
                         }
-                    } catch (_: Exception) {
-                        message("Organization choice or storage is no longer current. Refresh or retry in Connections.")
                     }
-                }.apply { isSaveEnabled = false },
-            )
-        }
-        // Style new controls without installing duplicate theme listeners or motion loops.
-        // The existing root listener restyles them on subsequent theme changes.
-        val theme = services.store.phantomTheme()
-        for (index in 0 until picker.childCount) {
-            val label = picker.getChildAt(index) as? android.widget.TextView ?: continue
-            val size = if (label is android.widget.Button) 16f else 13f
-            label.tag = TextStyle(size, if (label is android.widget.Button) "accent" else "subtext")
-            label.textSize = (size + theme.fontSizeOffset).coerceAtLeast(12f)
-            label.setTextColor(theme.color(if (label is android.widget.Button) "accent" else "subtext").argb)
-            if (label is android.widget.Button) {
-                label.background = PhantomSurface(this, theme, button = true)
-                label.backgroundTintList = null
-            }
-        }
+                } catch (_: Exception) {
+                    feedback.setText(R.string.input_org_failed)
+                    renderedOrganizations = null
+                    updateOrganizationPicker()
+                }
+            },
+        )
     }
-
-    private fun secretField(label: String) =
-        EditText(this).apply {
-            hint = "[ $label ]"
-            setHintTextColor(0xFFAAAAAA.toInt())
-            setTextColor(android.graphics.Color.WHITE)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            isSingleLine = true
-            isSaveEnabled = false
-            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-            imeOptions = EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-            filters = arrayOf(android.text.InputFilter.LengthFilter(16384))
-            drafts += this
-        }
 
     private fun updateStates() {
         updateOrganizationPicker()
@@ -324,35 +354,36 @@ class ConnectionsActivity : Activity() {
             alerts[snapshot.provider]?.visibility = if (alert) View.VISIBLE else View.GONE
             val display = present(snapshot, Instant.now(), services.store.staleMinutes() * 60L)
             states[snapshot.provider]?.let { label ->
-                label.text =
-                    getString(
-                        R.string.connection_status,
-                        hudStatus(snapshot, Instant.now(), services.store.staleMinutes() * 60L),
-                        providerSyncStatus(snapshot, display, ZoneId.systemDefault()).uppercase(java.util.Locale.ROOT),
-                    )
-                val slot = if (alert) "notifications" else "text"
-                label.tag = TextStyle(16f, slot)
+                val status =
+                    when (snapshot.connection) {
+                        Connection.DISCONNECTED -> "NOT CONNECTED"
+                        Connection.ERROR -> "ERROR"
+                        else -> hudStatus(snapshot, Instant.now(), services.store.staleMinutes() * 60L)
+                    }
+                label.text = getString(R.string.connection_status, status, providerSyncStatus(snapshot, display, ZoneId.systemDefault()))
+                label.tag = TextStyle(16f, if (alert) "notifications" else "text")
                 label.setTextColor(
                     services.store
                         .phantomTheme()
-                        .color(slot)
+                        .color(if (alert) "notifications" else "text")
                         .argb,
                 )
             }
         }
     }
 
-    private fun message(value: String) = Toast.makeText(this, value, Toast.LENGTH_LONG).show()
-
     override fun onResume() {
         super.onResume()
         services.store.listen(onChange)
         updateStates()
-        window.decorView.post { glitchAppElements() }
     }
 
     override fun onPause() {
-        drafts.forEach { it.text.clear() }
+        drafts.forEach {
+            it.hideSecret()
+            it.edit.text.clear()
+        }
+        clearPasteState.forEach { it() }
         organizationPicker?.removeAllViews()
         renderedOrganizations = null
         services.store.unlisten(onChange)

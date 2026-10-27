@@ -59,9 +59,14 @@ and are permitted to use; these credentials can grant broad account access.
 | Claude | Choose **OAuth token** (existing access token with `user:profile` scope) or **claude.ai sessionKey** (your web-session cookie). Inference-only/`claude setup-token` credentials, ordinary API keys and MCP tokens are not usage credentials. | `five_hour`, `seven_day` when supplied. `extra_usage` monthly spending is **not** subscription quota. |
 | OpenCode Go | Provider-issued API key from your OpenCode account/key-management UI. | API `usage.rolling`, `weekly`, `monthly` when reported; percent is already 0–100. |
 
-Choose **Save / replace and refresh**. Fields are masked, never prefilled, and cleared
-when leaving the screen; enter token values only, without `Bearer`, quotes, spaces or
-control characters. Codex account ID is masked too. Renew credentials through their
+Each provider has a status and last-sync card. Choose the Claude mode with the two-option
+selector; switching modes clears the draft. Open **How to get this** for instructions,
+or **Advanced** for Codex's optional account ID. Labeled, outlined fields include format
+feedback; **Save & refresh** enables only for a valid format (not proof of authorization).
+Use **Paste** or type, optionally **Show / Hide**; secrets start hidden, are never prefilled,
+and are hidden and cleared when leaving. Enter token values only, without `Bearer`,
+quotes, spaces or control characters. After a pasted credential is saved, **Clear clipboard**
+is offered on Android 9+ and clears only if clipboard text is unchanged. Codex account ID is masked too. Renew credentials through their
 owner/provider, then replace them here. There is no credential-file discovery or
 OAuth client impersonation. An OAuth 403 may indicate insufficient scope or permission,
 not expiry. Unsupported third-party access may fail even with a working official client.
@@ -126,7 +131,7 @@ OAuth mode; re-authentication does not bypass Cloudflare. A failed Codex reset-i
 invalidate successful usage; its count becomes unknown with a separate failure label.
 Reset inventory is the server's `available_count`, never spending `credits.balance`.
 
-Notifications are **on by default**; turn them off with the checkbox in Connections
+Notifications are **on by default**; turn them off with the explained switch in Connections
 (that explicit choice is kept). Installs from earlier default-off builds are switched
 on once. On Android 13+ the dashboard asks for `POST_NOTIFICATIONS` once on first
 open; Android 8+ uses the Credential reconnection channel. Denial/channel blocking leaves
@@ -321,7 +326,7 @@ Launcher sizing/font scaling must be verified on-device.
 
 The app uses a **nu11signal-inspired terminal instrument panel**, not widget cards:
 Kode Mono, dense one-cell angular frames, `//` metadata, `◢◤◢◤` hazard marks,
-bracketed controls and native bracketed/underlined input fields. Dashboard,
+bracketed controls and native labeled, outlined input fields with focus/error feedback. Dashboard,
 Connections and Appearance share a HUD wordmark, per-provider AUTH/LINK state,
 a local digital clock and NODE QSH-01 code. SIG reflects available fresh provider
 links (0–3), **not physical radio strength**. AUTH describes the last quota
@@ -407,12 +412,21 @@ off the UI thread. If the screen is recreated while an operation is running, ret
 
 Import and **Reset to default** load a draft: **Save** persists it and immediately
 requests updates for every widget through the normal snapshot-store change path.
-Cancel leaves the stored theme unchanged. **Export theme** writes the current valid
+The sticky **Save / Discard** bar reports unsaved changes; Save enables only for valid
+changes. Discard or Back asks before losing edits, and drafts survive rotation (including
+invalid fields). The live widget preview uses current snapshots and the unsaved theme;
+changes are debounced, and invalid fields leave the last valid preview visible.
+**Export theme** writes the current valid
 draft through Android's create-document picker; it does not implicitly Save.
 
 The default is the supplied PhantomShell **blue.json**, not the previously sampled
-palette. Edit each slot using six-digit **RRGGBB** and **alpha 0–100%**, select shapes,
-toggle all-caps, or enter a font-size offset from **−4 to +6**. Imported offsets outside
+palette. Settings groups **Theme file, Colors, Shapes, Text and Behavior**. Each color has
+a compact card with its live swatch beside the validated six-digit **RRGGBB** field,
+one helper/error line and an **opacity 0–100%** slider. Selectors use filled segments
+for 2–4 options and full-width radio rows for longer lists, with 48 dp minimum touch
+targets and native checked states. Use these for shapes, chart style and animation; switch all-caps,
+adjust font size with the **− / +** stepper (**−4 to +6**), and enter the stale threshold
+in its numeric field (**30–1440 minutes**). Imported offsets outside
 that range are clamped only for rendering; small text has a 3-unit minimum. Larger text
 adds row spacing, and the entire board still scales to fit the widget's bounds.
 

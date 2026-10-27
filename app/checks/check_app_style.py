@@ -7,6 +7,45 @@ SRC = ROOT / "app/src/main/kotlin/dev/wahh/quotashell"
 
 
 class AppStyleTest(unittest.TestCase):
+    def test_recognizable_secure_input_component(self):
+        path = SRC / "ui/ThemedInput.kt"
+        self.assertTrue(path.exists(), "Reusable outlined input component is missing")
+        source = path.read_text()
+        for contract in ("TYPE_TEXT_VARIATION_PASSWORD", "TYPE_TEXT_FLAG_NO_SUGGESTIONS",
+                         "IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS", "IME_FLAG_NO_PERSONALIZED_LEARNING",
+                         "labelFor", "contentDescription", "dp(48)", "setStroke", "hideSecret"):
+            self.assertIn(contract, source)
+        self.assertIn("hideSecret()", (SRC / "ConnectionsActivity.kt").read_text())
+
+    def test_segments_and_toggle_rows_have_real_view_minimum_height(self):
+        controls = (SRC / "ui/InputControls.kt").read_text()
+        self.assertIn("class SegmentButton", controls)
+        self.assertIn("minimumHeight = activity.dp(48)", controls)
+        self.assertIn("options.size in 2..4", controls)
+        self.assertIn("buttonDrawable = null", controls)
+        self.assertIn("isSelected = isChecked", controls)
+        self.assertIn('theme.color("accent")', controls)
+        shell = (SRC / "ui/PhantomShell.kt").read_text()
+        self.assertIn("view.minimumHeight = dp(48)", shell)
+        self.assertIn("view is SegmentButton", shell)
+
+    def test_input_has_one_helper_replaced_by_validation(self):
+        inputs = (SRC / "ui/ThemedInput.kt").read_text()
+        self.assertNotIn("addView(activity.text(helper, 12f))", inputs)
+        self.assertEqual(1, inputs.count("addView(support)"))
+        self.assertIn("result?.valid == false", inputs)
+        self.assertIn("else helper", inputs)
+        editor = (SRC / "ThemeEditor.kt").read_text()
+        self.assertIn("showLabel = false", editor)
+        self.assertIn("inputLine.addView(swatch", editor)
+        self.assertIn("inputLine.addView(field", editor)
+
+    def test_interactive_controls_never_glitch(self):
+        effects = (SRC / "ui/AppGlitch.kt").read_text()
+        self.assertIn("view is EditText", effects)
+        self.assertIn("view.isClickable", effects)
+        self.assertIn("view.isFocused", effects)
+
     def test_claude_session_wiring_and_sensitive_boundary(self):
         connections = (SRC / "ConnectionsActivity.kt").read_text()
         for contract in ("ClaudeCredentialKind.SESSION_KEY", "full claude.ai web account access",
@@ -80,16 +119,25 @@ class AppStyleTest(unittest.TestCase):
         for contract in ("store.listen", "store.unlisten", "phantomTheme()", "EditText", "Spinner"):
             self.assertIn(contract, shell)
 
-    def test_spinner_does_not_capture_unmeasured_parent_width(self):
+    def test_selectors_do_not_capture_unmeasured_parent_width(self):
         editor = (SRC / "ThemeEditor.kt").read_text()
         self.assertNotIn("LayoutParams(parent.width", editor)
         self.assertIn("HudFont.typeface", editor)
+        self.assertNotIn("Spinner", editor)
+        self.assertIn("ChoiceControl", editor)
+        self.assertIn("RadioGroup", (SRC / "ui/InputControls.kt").read_text())
 
     def test_secure_masked_manual_entry_remains(self):
         connections = (SRC / "ConnectionsActivity.kt").read_text()
-        for contract in ("FLAG_SECURE", "TYPE_TEXT_VARIATION_PASSWORD", "isSaveEnabled = false",
+        self.assertIn("FLAG_SECURE", connections)
+        self.assertIn("secret = true", connections)
+        inputs = (SRC / "ui/ThemedInput.kt").read_text()
+        for contract in ("TYPE_TEXT_VARIATION_PASSWORD", "isSaveEnabled = false",
                          "IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS", "IME_FLAG_NO_PERSONALIZED_LEARNING"):
-            self.assertIn(contract, connections)
+            self.assertIn(contract, inputs)
+        self.assertIn("PasswordTransformationMethod.getInstance()", inputs)
+        self.assertIn("it.hideSecret()", connections)
+        self.assertIn("it.edit.text.clear()", connections)
         self.assertNotIn("token.setText", connections)
         self.assertNotIn("account?.setText", connections)
         self.assertNotIn("Log.", connections)

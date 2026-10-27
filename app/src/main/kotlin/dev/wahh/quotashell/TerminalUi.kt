@@ -51,6 +51,7 @@ internal fun Activity.button(
     typeface = HudFont.typeface(this@button, true)
     isAllCaps = false
     minHeight = dp(48)
+    minimumHeight = dp(48)
     setPadding(dp(16), dp(8), dp(16), dp(8))
     layoutParams =
         android.widget.LinearLayout

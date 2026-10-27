@@ -39,12 +39,13 @@ internal fun Activity.installPhantomShell(
             if (view is Button && view !is CompoundButton) {
                 view.background = PhantomSurface(this, theme, button = true)
                 view.backgroundTintList = null
-                view.setTextColor(theme.color("accent").argb)
+                view.setTextColor(theme.color(style?.slot ?: "accent").argb)
+                view.alpha = if (view.isEnabled) 1f else 0.45f
             }
             if (view is EditText) {
                 view.minHeight = dp(48)
                 view.setHintTextColor(theme.color("subtext").argb)
-                view.background = PhantomSurface(this, theme, button = true, field = true)
+                if (view.parent !is ThemedInput) view.background = PhantomSurface(this, theme, button = true, field = true)
                 view.backgroundTintList = null
                 view.setPadding(dp(12), dp(8), dp(12), dp(8))
                 if (android.os.Build.VERSION.SDK_INT >= 29) {
@@ -57,6 +58,7 @@ internal fun Activity.installPhantomShell(
             }
             if (view is CompoundButton) {
                 view.minHeight = dp(48)
+                view.minimumHeight = dp(48)
                 view.buttonTintList = ColorStateList.valueOf(theme.color("accent").argb)
                 if (view is android.widget.Switch) {
                     view.thumbTintList = ColorStateList.valueOf(theme.color("accent").argb)
@@ -69,6 +71,8 @@ internal fun Activity.installPhantomShell(
             view.backgroundTintList = ColorStateList.valueOf(theme.color("outline").argb)
         }
         if (view is ViewGroup) for (index in 0 until view.childCount) apply(view.getChildAt(index), theme)
+        if (view is ThemedInput) view.applyTheme(theme)
+        if (view is SegmentButton) view.applyTheme(theme)
         view.invalidate()
     }
     val update: () -> Unit = {
