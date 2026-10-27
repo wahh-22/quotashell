@@ -185,9 +185,12 @@ python3 app/checks/check_backup_policy.py
 
 Alternatively supply an explicitly authorized SDK using `ANDROID_HOME` or an
 ignored `local.properties` (`sdk.dir=/authorized/sdk`). Automatic SDK download is
-disabled. Debug signing material stays in ignored `app/build/`, not the home directory.
-The build generates a development-only key there with the JDK's `keytool`; subsequent
-builds reuse it. Do not distribute this debug key or use it for release signing.
+disabled. The debug signing key lives in ignored `.tools/signing/debug.keystore`, not the
+home directory and not `app/build/`, so cleaning build outputs keeps the signature and
+`adb install -r` keeps installed credentials. The build generates a development-only
+key there with the JDK's `keytool` if it is missing; subsequent builds reuse it. Losing it
+forces an uninstall (which erases stored credentials). Do not distribute this debug key
+or use it for release signing.
 APK output: `app/build/outputs/apk/debug/app-debug.apk`. No release/publishing setup.
 
 ### Foundation validation (before provider integration)
@@ -211,8 +214,10 @@ APK output: `app/build/outputs/apk/debug/app-debug.apk`. No release/publishing s
 - No emulator/device/PhantomShell check yet. Platform-tools are not installed in
   this local SDK; Gradle warns but APK assembly/lint do not require them.
 
-Exact validation commands use the three environment exports above. All logs below
-are combined stdout/stderr under ignored `.build-evidence/`:
+Exact validation commands use the three environment exports above. The logs named
+below were combined stdout/stderr under ignored `.build-evidence/`; that local folder
+was deleted during repository cleanup, and the recorded results remain summarized here
+and in `odd/tasks/android-app.md`:
 
 | Command | Exit | Log |
 | --- | --- | --- |

@@ -2,6 +2,11 @@ plugins {
     id("com.android.application")
     kotlin("android")
 }
+
+// Keep even the generated debug key in the checkout, not ~/.android, and outside build/:
+// a clean must not change the signature, or installed builds (and their credentials) are lost.
+val localDebugKeystore = rootProject.layout.projectDirectory.file(".tools/signing/debug.keystore")
+
 android {
     namespace = "dev.wahh.quotashell"
     compileSdk = 35
@@ -17,35 +22,27 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    // Keep even the generated debug key in the checkout, not ~/.android.
     signingConfigs.getByName("debug") {
-        storeFile =
-            layout.buildDirectory
-                .file("debug.keystore")
-                .get()
-                .asFile
+        storeFile = localDebugKeystore.asFile
     }
 }
 dependencies { implementation(project(":core")) }
 
 // AGP only auto-generates the default home-directory debug key. Generate our
 // explicitly relocated, development-only key before signing validation instead.
-val localDebugKeystore = layout.buildDirectory.file("debug.keystore")
 val generateLocalDebugKeystore =
     tasks.register<Exec>("generateLocalDebugKeystore") {
         outputs.file(localDebugKeystore)
-        onlyIf { !localDebugKeystore.get().asFile.exists() }
+        onlyIf { !localDebugKeystore.asFile.exists() }
         doFirst {
-            localDebugKeystore
-                .get()
-                .asFile.parentFile
+            localDebugKeystore.asFile.parentFile
                 .mkdirs()
         }
         commandLine(
             "${System.getProperty("java.home")}/bin/keytool",
             "-genkeypair",
             "-keystore",
-            localDebugKeystore.get().asFile.absolutePath,
+            localDebugKeystore.asFile.absolutePath,
             "-storetype",
             "PKCS12",
             "-storepass",
