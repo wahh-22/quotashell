@@ -15,7 +15,9 @@ import android.widget.EditText
 import android.widget.ScrollView
 import android.widget.Toast
 import dev.wahh.quotashell.core.*
+import dev.wahh.quotashell.core.ui.hudStatus
 import java.time.Instant
+import java.time.ZoneId
 
 /** Manual entry only. Never preload, reveal, autofill, save hierarchy state or pass credentials. */
 class ConnectionsActivity : Activity() {
@@ -34,7 +36,8 @@ class ConnectionsActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val body = panel(code = "LINK-00")
-        body.addView(text("> Connections", 24f))
+        body.addView(hudHeader("CONNECTIONS"))
+        body.addView(text("◢◤◢◤ // SECURE LINK CONSOLE", 18f))
         body.addView(
             text(
                 "Enter credentials only on this device. No official login or token renewal is provided. Replace credentials after renewing through the provider. Never send credentials in chat.",
@@ -73,7 +76,7 @@ class ConnectionsActivity : Activity() {
         )
         for (provider in ProviderId.entries) {
             val card = panel(code = "LINK-0${provider.ordinal + 1}")
-            card.addView(text(provider.title, 22f))
+            card.addView(text(provider.title.uppercase(java.util.Locale.ROOT), 19f))
             alerts[provider] = alertGlyph().also { card.addView(it) }
             states[provider] = text("").also { card.addView(it) }
             card.addView(
@@ -150,13 +153,14 @@ class ConnectionsActivity : Activity() {
                 }
             },
         )
+        body.addView(text("└── LINK-00 // LOCAL INPUT ONLY ─╱", 12f))
         terminalContent(ScrollView(this).apply { addView(body) })
         updateStates()
     }
 
     private fun secretField(label: String) =
         EditText(this).apply {
-            hint = label
+            hint = "[ $label ]"
             setHintTextColor(0xFFAAAAAA.toInt())
             setTextColor(android.graphics.Color.WHITE)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -175,7 +179,12 @@ class ConnectionsActivity : Activity() {
             alerts[snapshot.provider]?.visibility = if (alert) View.VISIBLE else View.GONE
             val display = present(snapshot, Instant.now(), services.store.staleMinutes() * 60L)
             states[snapshot.provider]?.let { label ->
-                label.text = getString(R.string.connection_status, display.state, display.age)
+                label.text =
+                    getString(
+                        R.string.connection_status,
+                        hudStatus(snapshot, Instant.now(), services.store.staleMinutes() * 60L),
+                        providerSyncStatus(snapshot, display, ZoneId.systemDefault()).uppercase(java.util.Locale.ROOT),
+                    )
                 val slot = if (alert) "notifications" else "text"
                 label.tag = TextStyle(16f, slot)
                 label.setTextColor(

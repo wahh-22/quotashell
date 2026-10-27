@@ -40,7 +40,7 @@ internal class ThemeEditor(
             val color = original.color(slot)
             val hex = "%06X".format(color.argb and 0xFFFFFF)
             val alpha = (color.alpha * 100).roundToInt().toString()
-            body.addView(activity.text("$slot · RRGGBB / alpha 0–100%"))
+            body.addView(activity.text("// ${slot.uppercase(java.util.Locale.ROOT)} // RRGGBB / ALPHA %", 13f))
             val hexInput = input(state?.getString("$slot.hex") ?: hex, false).apply { contentDescription = "$slot RGB hex" }
             val alphaInput = input(state?.getString("$slot.alpha") ?: alpha, true).apply { contentDescription = "$slot alpha percent" }
             body.addView(hexInput)
@@ -114,7 +114,7 @@ internal class ThemeEditor(
                     private fun label(position: Int): android.view.View {
                         val active = (activity.application as QuotaApplication).store.phantomTheme()
                         return activity.text(values[position]).apply {
-                            typeface = PhantomGraphics.typeface(activity, false)
+                            typeface = HudFont.typeface(activity, false)
                             text = active.displayText(values[position])
                             textSize = (16f + active.fontSizeOffset).coerceAtLeast(12f)
                             setTextColor(active.color("text").argb)

@@ -10,5 +10,7 @@
     <string name="theme_writing">Writing theme…</string>
     <string name="theme_all_caps">All caps</string>
     <string name="notify_opt_in">Opt in to reconnect notifications</string>
-    <string name="connection_status">%1$s · %2$s. Saved credentials are never displayed.</string>
+    <string name="connection_status">%1$s // %2$s. Saved credentials are never displayed.</string>
+    <string name="hud_control">[ %1$s ]</string>
+    <string name="hud_clock">%1$s // %2$s // NODE QSH-01</string>
 </resources>

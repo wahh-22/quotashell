@@ -28,7 +28,7 @@ internal fun Activity.text(
 ) = TextView(this).apply {
     text = value
     textSize = size
-    typeface = PhantomGraphics.typeface(this@text, size >= 18f)
+    typeface = HudFont.typeface(this@text, size >= 18f)
     tag =
         TextStyle(
             size,
@@ -40,22 +40,22 @@ internal fun Activity.text(
                 "text"
             },
         )
-    setPadding(0, dp(7), 0, dp(7))
+    setPadding(0, dp(3), 0, dp(3))
 }
 
 internal fun Activity.button(
     label: String,
     action: () -> Unit,
 ) = Button(this).apply {
-    text = label
-    typeface = PhantomGraphics.typeface(this@button, true)
+    text = getString(R.string.hud_control, label.uppercase(java.util.Locale.ROOT))
+    typeface = HudFont.typeface(this@button, true)
     isAllCaps = false
     minHeight = dp(48)
     setPadding(dp(16), dp(8), dp(16), dp(8))
     layoutParams =
         android.widget.LinearLayout
             .LayoutParams(-1, -2)
-            .apply { bottomMargin = dp(8) }
+            .apply { bottomMargin = dp(4) }
     setOnClickListener { action() }
 }
 
@@ -66,8 +66,8 @@ internal fun Activity.panel(
     code: String = "SYS-00",
 ) = column().apply {
     tag = PanelStyle(code)
-    setPadding(dp(18), dp(30), dp(18), dp(18))
-    layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(16) }
+    setPadding(dp(12), dp(28), dp(12), dp(28))
+    layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
 }
 
 internal fun Activity.terminalContent(

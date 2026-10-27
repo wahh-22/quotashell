@@ -225,41 +225,84 @@ network and battery restrictions; manual Sync/Refresh now also use the same gate
 Stale transitions can lag on a sleeping launcher; this is not a real-time expiry alarm.
 Launcher sizing/font scaling must be verified on-device.
 
-## App styling
+## App HUD
 
-Dashboard, Connections and Appearance share the widget's **active saved theme**:
-Adwaita Mono, theme-colored text and angular outlined panels with tab codes, stripe
-marks and binary corner decoration. Window/button shapes, notification glyphs,
-all-caps and font offset apply throughout, including native input and picker labels.
-The dashboard places larger CELLS/TICKS/RING charts left of quota text; reconnect/error
-states show the theme's alert glyph and color. Dashboard reset dates use the same
-local-zone formatter as the widget (`dd MMM HH:mm`, or `--` when unknown).
-All screens share a 16 dp outer gutter, outside their panel backgrounds.
-System bars use the theme background.
-Native document/permission pickers remain Android-owned UI.
+The app uses a **nu11signal-inspired terminal instrument panel**, not widget cards:
+Kode Mono, dense one-cell angular frames, `//` metadata, `◢◤◢◤` hazard marks,
+bracketed controls and native bracketed/underlined input fields. Dashboard,
+Connections and Appearance share a HUD wordmark, per-provider AUTH/LINK state,
+a local digital clock and NODE QSH-01 code. SIG reflects available fresh provider
+links (0–3), **not physical radio strength**. AUTH describes the last quota
+observation; it is not an independent token-validity probe.
 
-Theme changes restyle existing controls through SnapshotStore listeners without a
-restart or rebuilding credential fields/draft editors. Import/reset still changes
-only the draft until Save; the editor itself stays in the saved theme. Text inputs
-retain entered case; all-caps is presentation-only on labels. Buttons, toggles,
-spinners and input fields have at least 48 dp touch heights. Real native labels and
-chart/alert descriptions remain available to accessibility services.
+Provider panels show LINK OK / RECONNECT / NO CARRIER / STALE / SYNCING without
+hiding detailed failure labels. Dashboard quota rows have horizontal filled/empty
+terminal segments on the left, usage and local reset times on the right, absolute
+SYNC HH:mm timestamps and separate Codex reset inventory. Unknown usage is not zero.
+The widget keeps its existing CELLS/TICKS/RING styling and **Adwaita Mono**.
+App frames stay angular and controls bracketed regardless of widget shape selection;
+widget shape/chart settings and their import/export semantics are unchanged.
 
-On screen open/resume and refresh completion, **1–3 randomly selected visible leaf
-views** briefly use the same signal-loss row shifts, shaded static and noise glyphs
-as the widget. There are no color-split copies or element-jitter helpers. Selection is
-deterministic per frame seed. Two frames settle after **300 ms**, with no periodic
-Activity animation. Captures happen outside drawing; hidden originals are restored
-at completion or cancellation so translucent text does not smear.
-Credential and other EditText content is never sampled for this effect. Effects
-require `notificationAnimation=GLITCH` and nonzero system animator duration scale;
-otherwise no overlay is created. The overlay does not intercept touches or TalkBack.
+Colors come exclusively from the saved PhantomShell roles: outline for frames,
+subtext for muted metadata, subtext2 for purple-style accents, notifications for
+cyan-style highlights, text/accent for readings, window/background for surfaces.
+Custom themes may choose different hues. Font offset and label all-caps still apply;
+metadata/control labels are explicitly uppercase. A shared 16 dp outer gutter,
+48 dp input/control touch heights, real native labels/buttons, chart descriptions
+and unchanged accessibility text remain. System bars follow the theme background;
+Android owns document/permission pickers and the keyboard.
 
-Validation: JVM burst-boundary/reduced-motion tests and
-`python3 -I app/checks/check_app_style.py` cover pure scheduling and source wiring.
-The source guard checks retained FLAG_SECURE/masking/autofill protections, not runtime
-security or visual fidelity. Physical-device visual/accessibility verification is
-still required, particularly large font scaling and custom low-contrast themes.
+Theme listeners restyle existing controls without rebuilding credential drafts.
+Import/reset edits only a draft until Save. Connections retains FLAG_SECURE,
+masked non-prefilled fields, pause clearing, autofill/state/keyboard-learning
+protections and the existing save/remove/notification flows. No input value is
+read by presentation effects. Native EditText remains responsible for editing.
+
+### Motion and calm mode
+
+On opening a screen or changing visible values, decode reveal uses the shared
+`decodeReveal` rule: **900 ms at 20 fps**, about half of changed non-space cells,
+`A-Z0-9+-=:/<>`, left-to-right resolution with
+`0.2 + 0.7*(1-sqrt(1-columnFraction)) + 0.1*random`. Unchanged cells stay clean.
+Detached native labels render the reveal; actual labels/accessibility text and
+button hit areas never change. The clock and native toggles stay clean.
+
+While focused and visible, an occasional signal-loss burst waits **10–22 s**,
+then lasts **600–1000 ms at approximately 15 fps**. One selected visible text
+surface uses the shared `signalLossPlan`: 1–3 row shifts by 1–2 cells, a one-third
+static-row chance and 4–10 corrupted cells (capped on tiny surfaces) from
+`░▒▓█▚▞0137ACEF`. No signal message, RGB split, background scanlines or moving
+hit targets. Captures/allocations happen outside `onDraw`; originals restore on
+completion, focus loss, detachment or animation disable. No parent or EditText is
+captured. Overlays neither intercept input nor expose duplicate TalkBack nodes.
+
+Both effects require **notificationAnimation=GLITCH** and nonzero system animator
+scale. Choose **Notification animation → NONE** and Save, or Android Remove
+animations, for the clean/calm path. Focus loss cancels scheduled bursts and frames;
+there are no network requests or background services for app motion. The clock
+updates once per second while focused; rendering/motion has a modest battery cost.
+
+### Bundled Kode Mono
+
+Official Google Fonts source pinned to revision
+`909667d11fe41a8384294d064950c48c53904d27`:
+[font](https://raw.githubusercontent.com/google/fonts/909667d11fe41a8384294d064950c48c53904d27/ofl/kodemono/KodeMono%5BROND%2Cwdth%2Cwght%5D.ttf),
+[SIL OFL 1.1 license](https://raw.githubusercontent.com/google/fonts/909667d11fe41a8384294d064950c48c53904d27/ofl/kodemono/OFL.txt).
+The font's embedded name-table version is **2.002**. Bundled unchanged in
+`app/src/main/assets/fonts/KodeMono[ROND,wdth,wght].ttf`; Android API 26+
+Typeface.Builder selects weight 400/700, width 100 and roundness 0 for all app
+labels, buttons, inputs and Spinner items. License: `KodeMono-OFL.txt` beside it.
+
+SHA-256:
+- Font: `bd7b11b37524e03e270c7a1726f08cc52cb17e8ebc3f664f9d323dfd9277b311`
+- License: `56de2b11bf783431f18a9ada94a2ff20fafaab49fe8b0b1f63e29df9187957b1`
+
+Validation: HUD status/freshness priority, link indicator bounds, local clock and
+burst schedule JVM tests; existing signal-loss/decode tests; source guards in
+`python3 -I app/checks/check_app_style.py`. These are not runtime security,
+visual-fidelity or frame-rate proof. Device font fallback, foldable/large-font
+layout, touch, TalkBack and custom low-contrast themes still need physical checks.
+No screenshots were taken for this redesign.
 
 ## PhantomShell theme import and export
 
@@ -344,7 +387,7 @@ Exports preserve JSON field values, including unknown nested objects/arrays, whe
 practical, not original whitespace or numeric spelling. Numbers use the existing
 strict parser's Double representation. Unchanged editor fields retain their original
 HSL/fractional alpha rather than being quantized to the displayed hex/whole percent.
-The saved theme also styles the native app (see App styling below).
+The saved theme also styles the native app (see App HUD above).
 
 **Migration:** existing explicitly stored accent RGB becomes the theme's accent;
 legacy panel opacity becomes only `window.alpha`. Other slots, including the outer

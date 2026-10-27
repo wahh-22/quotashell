@@ -7,6 +7,23 @@ SRC = ROOT / "app/src/main/kotlin/dev/wahh/quotashell"
 
 
 class AppStyleTest(unittest.TestCase):
+    def test_hud_font_is_app_only(self):
+        font = (SRC / "ui/HudFont.kt").read_text() if (SRC / "ui/HudFont.kt").exists() else ""
+        self.assertIn("KodeMono[ROND,wdth,wght].ttf", font)
+        self.assertIn("setFontVariationSettings", font)
+        self.assertIn("SIL OPEN FONT LICENSE", (ROOT / "app/src/main/assets/fonts/KodeMono-OFL.txt").read_text())
+        widget = (SRC / "PhantomBoardRenderer.kt").read_text()
+        self.assertNotIn("HudFont", widget)
+        self.assertIn("PhantomGraphics", widget)
+        for path in ("TerminalUi.kt", "ThemeEditor.kt", "ui/PhantomShell.kt"):
+            self.assertIn("HudFont.typeface", (SRC / path).read_text())
+        graphics = (SRC / "PhantomGraphics.kt").read_text()
+        self.assertIn("AdwaitaMono", graphics)
+        for path in ("MainActivity.kt", "ConnectionsActivity.kt", "SettingsActivity.kt", "ui/AppGlitch.kt"):
+            source = (SRC / path).read_text()
+            for forbidden in ("NO SIGNAL", "N O   S I G N A L", "rgbOffset"):
+                self.assertNotIn(forbidden, source)
+
     def test_shared_outer_spacing(self):
         ui = (SRC / "TerminalUi.kt").read_text()
         self.assertIn("view.setPadding(dp(16), dp(16), dp(16), dp(16))", ui)
@@ -24,18 +41,21 @@ class AppStyleTest(unittest.TestCase):
         self.assertIn("selectedViews", effects)
         self.assertIn("getGlobalVisibleRect", effects)
         self.assertIn("view.draw(Canvas(source))", effects)
-        drawing = effects.split("override fun onDraw(canvas: Canvas)", 1)[1]
+        drawing = effects.split("override fun onDraw(canvas: Canvas)", 1)[1].split("}.apply {", 1)[0]
         self.assertNotIn("Bitmap.createBitmap", drawing)
         self.assertNotIn("Canvas(output)", drawing)
         self.assertIn("originalAlphas[view] = view.alpha", effects)
         self.assertIn("view.alpha = 0f", effects)
         self.assertIn("view.alpha = alpha", effects)
         self.assertIn("if (stopped) return", effects)
-        self.assertIn("effect.stop()", effects)
+        self.assertIn("cancel()", effects)
+        self.assertIn("root.removeCallbacks(frame)", effects)
+        self.assertIn("root.removeCallbacks(periodic)", effects)
+        self.assertIn("if (hadFrames) effect.invalidate()", effects)
 
     def test_shared_typeface_and_live_theme(self):
         ui = (SRC / "TerminalUi.kt").read_text()
-        self.assertIn("PhantomGraphics.typeface", ui)
+        self.assertIn("HudFont.typeface", ui)
         self.assertNotIn("Typeface.MONOSPACE", ui)
         shell = (SRC / "ui/PhantomShell.kt").read_text()
         for contract in ("store.listen", "store.unlisten", "phantomTheme()", "EditText", "Spinner"):
@@ -44,7 +64,7 @@ class AppStyleTest(unittest.TestCase):
     def test_spinner_does_not_capture_unmeasured_parent_width(self):
         editor = (SRC / "ThemeEditor.kt").read_text()
         self.assertNotIn("LayoutParams(parent.width", editor)
-        self.assertIn("PhantomGraphics.typeface", editor)
+        self.assertIn("HudFont.typeface", editor)
 
     def test_secure_masked_manual_entry_remains(self):
         connections = (SRC / "ConnectionsActivity.kt").read_text()
@@ -65,12 +85,17 @@ class AppStyleTest(unittest.TestCase):
         dashboard = (SRC / "MainActivity.kt").read_text()
         self.assertIn("quotaChart(window.progress)", dashboard)
         charts = (SRC / "ui/QuotaChart.kt").read_text()
-        for style in ("ChartStyle.CELLS", "ChartStyle.TICKS", "ChartStyle.RING"):
-            self.assertIn(style, charts)
+        # The app is now a terminal HUD; widget chart-style options remain unchanged.
+        for contract in ("filledSegments(percent, 12)", "Paint.Style.STROKE", "percent used"):
+            self.assertIn(contract, charts)
+        for name in ("MainActivity.kt", "ConnectionsActivity.kt", "SettingsActivity.kt"):
+            self.assertIn("hudHeader(", (SRC / name).read_text())
 
     def test_effects_are_bounded_and_only_elements(self):
         effects = (SRC / "ui/AppGlitch.kt").read_text()
-        for contract in ("appSignalActive", "ANIMATOR_DURATION_SCALE", "is EditText", "PhantomGraphics.signalLoss"):
+        for contract in ("periodicGlitchEnabled", "ANIMATOR_DURATION_SCALE", "is EditText", "PhantomGraphics.signalLoss",
+                         "decodeReveal", "duration = 900L", "if (loss) 67 else 50", "hudBurstDuration", "hudBurstDelay",
+                         "root.hasWindowFocus()", "OnWindowFocusChangeListener", "font = view.typeface"):
             self.assertIn(contract, effects)
         for removed in ("rgbOffset", "jitterX", "PhantomGraphics.slices", "NO SIGNAL", "N O   S I G N A L"):
             self.assertNotIn(removed, effects)

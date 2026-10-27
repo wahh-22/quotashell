@@ -33,7 +33,7 @@ internal fun Activity.installPhantomShell(
             val style = view.tag as? TextStyle
             val base = sizes.getOrPut(view) { style?.size ?: (view.textSize / resources.displayMetrics.scaledDensity) }
             view.textSize = (base + theme.fontSizeOffset).coerceAtLeast(12f)
-            view.typeface = PhantomGraphics.typeface(this, view is Button || base >= 18f)
+            view.typeface = HudFont.typeface(this, view is Button || base >= 18f)
             view.setTextColor(theme.color(style?.slot ?: "text").argb)
             if (view !is EditText) view.setAllCaps(theme.isAllCaps)
             if (view is Button && view !is CompoundButton) {
@@ -44,7 +44,16 @@ internal fun Activity.installPhantomShell(
             if (view is EditText) {
                 view.minHeight = dp(48)
                 view.setHintTextColor(theme.color("subtext").argb)
-                view.backgroundTintList = ColorStateList.valueOf(theme.color("outline").argb)
+                view.background = PhantomSurface(this, theme, button = true, field = true)
+                view.backgroundTintList = null
+                view.setPadding(dp(12), dp(8), dp(12), dp(8))
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    view.textCursorDrawable =
+                        android.graphics.drawable.GradientDrawable().apply {
+                            setColor(theme.color("notifications").argb)
+                            setSize(dp(9), dp(2))
+                        }
+                }
             }
             if (view is CompoundButton) {
                 view.minHeight = dp(48)
@@ -77,7 +86,7 @@ internal fun Activity.installPhantomShell(
             override fun onViewAttachedToWindow(view: View) {
                 store.listen(update)
                 update()
-                if (openingGlitch) root.post { glitchAppElements() }
+                installHudMotion(root, openingGlitch)
             }
 
             override fun onViewDetachedFromWindow(view: View) {
@@ -86,14 +95,16 @@ internal fun Activity.installPhantomShell(
         },
     )
     update()
+    if (root.isAttachedToWindow) installHudMotion(root, openingGlitch)
 }
 
-/** Shared widget geometry in dp, not density-dependent pixel chamfers. */
+/** App-only terminal frames; widget geometry in dp, not density-dependent pixel chamfers. */
 internal class PhantomSurface(
     private val activity: Activity,
     private val theme: PhantomTheme,
     private val code: String = "",
     private val button: Boolean = false,
+    private val field: Boolean = false,
 ) : Drawable() {
     override fun draw(canvas: Canvas) {
         val density = activity.resources.displayMetrics.density
@@ -102,19 +113,53 @@ internal class PhantomSurface(
         canvas.scale(density, density)
         val width = bounds.width() / density
         val height = bounds.height() / density
-        val graphics = PhantomGraphics(activity, canvas, theme)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.color = theme.color("window").argb
+        canvas.drawRect(0f, 0f, width, height, paint)
+        paint.style = android.graphics.Paint.Style.STROKE
+        paint.strokeWidth = 1f
+        paint.color = theme.color("outline").argb
         val path =
-            if (button) {
-                graphics.buttonPath(1f, 1f, width - 1, height - 1)
-            } else {
-                PhantomGraphics.panelPath(1f, 1f, width - 1, height - 1, theme.renderWindowShape)
+            android.graphics.Path().apply {
+                if (button) {
+                    moveTo(9f, 5f)
+                    lineTo(2f, 5f)
+                    lineTo(2f, height - 5f)
+                    lineTo(9f, height - 5f)
+                    moveTo(width - 9f, 5f)
+                    lineTo(width - 2f, 5f)
+                    lineTo(width - 2f, height - 5f)
+                    lineTo(width - 9f, height - 5f)
+                } else {
+                    moveTo(2f, 19f)
+                    lineTo(14f, 7f)
+                    lineTo(width - 2f, 7f)
+                    lineTo(width - 2f, height - 19f)
+                    moveTo(2f, 24f)
+                    lineTo(2f, height - 7f)
+                    lineTo(width - 14f, height - 7f)
+                    lineTo(width - 2f, height - 19f)
+                }
             }
-        graphics.fill(path, theme.color("window").argb)
-        graphics.stroke(path, theme.color("outline").argb, 1f)
+        canvas.drawPath(path, paint)
+        if (field) {
+            paint.color = theme.color("subtext2").argb
+            canvas.drawLine(12f, height - 6f, width - 12f, height - 6f, paint)
+        }
         if (!button) {
-            graphics.text(code, 12f, 19f, 11f, theme.color("subtext2").argb)
-            graphics.text("0101 //", width - 86f, 19f, 10f, theme.color("subtext2").argb)
-            graphics.text("/////", width - 65f, height - 8f, 10f, theme.color("subtext2").argb)
+            paint.style = android.graphics.Paint.Style.FILL
+            paint.typeface = HudFont.typeface(activity)
+            paint.textSize = 11f
+            val label = "▮ $code //"
+            val labelWidth = paint.measureText(label)
+            paint.color = theme.color("window").argb
+            canvas.drawRect(17f, 0f, 25f + labelWidth, 23f, paint)
+            paint.color = theme.color("notifications").argb
+            canvas.drawText(label, 21f, 12f, paint)
+            paint.color = theme.color("subtext2").argb
+            canvas.drawText("◢◤◢◤", width - 48f, height - 12f, paint)
+            paint.color = theme.color("subtext").argb
+            canvas.drawText("// $code ─╱", 12f, height - 12f, paint)
         }
         canvas.restore()
     }

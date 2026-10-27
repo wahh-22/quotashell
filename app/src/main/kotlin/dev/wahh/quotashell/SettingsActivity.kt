@@ -44,7 +44,8 @@ class SettingsActivity : Activity() {
         notice: String = "",
     ) {
         val body = panel(code = "CFG-00")
-        body.addView(text("> Appearance", 24f))
+        body.addView(hudHeader("CONFIG"))
+        body.addView(text("◢◤◢◤ // APPEARANCE MATRIX", 18f))
         body.addView(text("One theme · app and all widgets. Save applies appearance and staleness everywhere.", 12f))
         message = text(state?.getString("message") ?: notice)
         message.accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE
@@ -90,6 +91,7 @@ class SettingsActivity : Activity() {
         stale =
             EditText(this).apply {
                 inputType = InputType.TYPE_CLASS_NUMBER
+                contentDescription = "Stale threshold in minutes"
                 setText(state?.getString("stale") ?: store.staleMinutes().toString())
             }
         body.addView(stale)
@@ -101,6 +103,7 @@ class SettingsActivity : Activity() {
         )
         body.addView(button("Save") { save() })
         body.addView(button("Cancel") { finish() })
+        body.addView(text("└── CFG-00 // DRAFT UNTIL SAVE ─╱", 12f))
         terminalContent(ScrollView(this).apply { addView(body) })
     }
 

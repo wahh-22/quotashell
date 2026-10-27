@@ -14,6 +14,7 @@ import dev.wahh.quotashell.core.ProviderSnapshot
 import dev.wahh.quotashell.core.formatLocalReset
 import dev.wahh.quotashell.core.present
 import dev.wahh.quotashell.core.providerSyncStatus
+import dev.wahh.quotashell.core.ui.hudStatus
 import java.time.Instant
 import java.time.ZoneId
 
@@ -22,6 +23,7 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var scroll: ScrollView
     private var displayedSnapshots = emptyList<ProviderSnapshot>()
+    private var syncing = false
     private val onChange: () -> Unit = {
         val snapshotChanged = displayedSnapshots != services.store.snapshots()
         render()
@@ -51,7 +53,7 @@ class MainActivity : Activity() {
         super.onResume()
         services.store.listen(onChange)
         render()
-        scroll.post { glitchAppElements() }
+        scroll.post { glitchAppElements(opening = true) }
         handler.postDelayed(tick, 60_000)
     }
 
@@ -69,7 +71,10 @@ class MainActivity : Activity() {
     }
 
     private fun refresh() {
+        syncing = true
+        render()
         services.refresh { message ->
+            syncing = false
             if (!isDestroyed) {
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                 render()
@@ -81,17 +86,8 @@ class MainActivity : Activity() {
     private fun render() {
         val y = if (::scroll.isInitialized) scroll.scrollY else 0
         val body = column()
-        val header = panel(code = "QSH-00")
-        header.addView(text("> QuotaShell", 28f))
-        header.addView(text("Subscription quota · read only", 13f))
-        body.addView(header)
-        body.addView(button("Refresh now") { refresh() })
-        body.addView(button("Connections / reconnect") { startActivity(Intent(this, ConnectionsActivity::class.java)) })
-        body.addView(
-            button("Settings / widget appearance") {
-                startActivity(Intent(this, SettingsActivity::class.java))
-            },
-        )
+        body.addView(hudHeader("TELEMETRY"))
+        body.addView(text("◢◤◢◤ // SUBSCRIPTION TELEMETRY // READ ONLY", 12f))
         val now = Instant.now()
         displayedSnapshots = services.store.snapshots()
         for (snapshot in displayedSnapshots) {
@@ -105,11 +101,16 @@ class MainActivity : Activity() {
                             ProviderId.OPENCODE_GO -> "OCG-03"
                         },
                 )
-            card.addView(text(display.title, 22f))
+            card.addView(text(display.title.uppercase(java.util.Locale.ROOT), 19f))
+            card.addView(
+                text(hudStatus(snapshot, now, services.store.staleMinutes() * 60L, syncing), 14f).apply {
+                    tag = TextStyle(14f, "notifications")
+                },
+            )
             if (snapshot.connection == Connection.RECONNECT_REQUIRED || snapshot.connection == Connection.ERROR) {
                 card.addView(alertGlyph())
             }
-            card.addView(text(providerSyncStatus(snapshot, display, ZoneId.systemDefault())))
+            card.addView(text(providerSyncStatus(snapshot, display, ZoneId.systemDefault()).uppercase(java.util.Locale.ROOT), 12f))
             if (display.windows.isEmpty()) card.addView(text("No reported quota windows"))
             for ((quota, window) in snapshot.windows.zip(display.windows)) {
                 val row = LinearLayout(this).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
@@ -119,16 +120,20 @@ class MainActivity : Activity() {
                         setPadding(0, 0, 0, 0)
                         layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
                     }
-                labels.addView(text("${window.title} · ${window.usage}", 20f))
-                labels.addView(text(formatLocalReset(quota.resetsAt, ZoneId.systemDefault()), 14f))
+                labels.addView(text("${window.title.uppercase(java.util.Locale.ROOT)} // ${window.usage}", 16f))
+                labels.addView(text("RST ${formatLocalReset(quota.resetsAt, ZoneId.systemDefault())}", 12f))
                 row.addView(labels)
                 card.addView(row)
             }
             if (snapshot.provider == ProviderId.CODEX) {
-                card.addView(text(display.resetInventory ?: "Codex resets available: Unknown"))
+                card.addView(text((display.resetInventory ?: "Codex resets available: Unknown").uppercase(java.util.Locale.ROOT), 13f))
             }
             body.addView(card)
         }
+        body.addView(button(if (syncing) "SYNCING" else "REFRESH") { refresh() })
+        body.addView(button("CONNECTIONS // RECONNECT") { startActivity(Intent(this, ConnectionsActivity::class.java)) })
+        body.addView(button("SETTINGS // APPEARANCE") { startActivity(Intent(this, SettingsActivity::class.java)) })
+        body.addView(text("└── QSH-01 // END TELEMETRY ─╱", 12f))
         body.addView(
             text(
                 "Manual credentials · no official login. Expiry/rejection is detected only on refresh; Android may delay background checks. No quotas are simulated.",

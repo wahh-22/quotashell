@@ -25,13 +25,14 @@ class PhantomGraphics(
     private val seed: Long = 0,
     private val previousText: Map<String, String> = emptyMap(),
     private val revealProgress: Double = 1.0,
+    appTypeface: Typeface? = null,
 ) {
     val textRuns = mutableMapOf<String, String>()
     var protectedText = false
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val regular = typeface(context, false)
-    private val bold = typeface(context, true)
+    private val regular = appTypeface ?: typeface(context, false)
+    private val bold = appTypeface ?: typeface(context, true)
 
     fun measure(
         value: String,
@@ -230,12 +231,13 @@ class PhantomGraphics(
             rowHeight: Float,
             seed: Long,
             frame: Int,
+            font: Typeface = typeface(context, false),
         ) {
             val rows = (region.height() / rowHeight).toInt().coerceAtLeast(0)
             val columns = (region.width() / cellWidth).toInt().coerceAtLeast(0)
             val plan = signalLossPlan(seed, frame, rows, columns)
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-            paint.typeface = typeface(context, false)
+            paint.typeface = font
             paint.textSize = rowHeight * 0.85f
 
             fun band(row: Int) = RectF(region.left, region.top + row * rowHeight, region.right, region.top + (row + 1) * rowHeight)
