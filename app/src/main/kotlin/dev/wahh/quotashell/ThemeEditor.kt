@@ -8,6 +8,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.Switch
+import dev.wahh.quotashell.core.ChartStyle
 import dev.wahh.quotashell.core.PhantomTheme
 import kotlin.math.roundToInt
 
@@ -28,6 +29,7 @@ internal class ThemeEditor(
     private val button: Spinner
     private val notification: Spinner
     private val animation: Spinner
+    private val chart: Spinner
     private val caps: Switch
     private val offset: EditText
     private val initialOffset = original.fontSizeOffset.toString()
@@ -57,9 +59,16 @@ internal class ThemeEditor(
         animation =
             shapes(
                 body,
-                "Notification animation (widget burst)",
+                "Notification animation (periodic glitch + update burst)",
                 PhantomTheme.NOTIFICATION_ANIMATIONS,
                 state?.getString("notificationAnimation") ?: original.notificationAnimation,
+            )
+        chart =
+            shapes(
+                body,
+                "Quota chart style",
+                ChartStyle.entries.map { it.name },
+                state?.getString("chartStyle") ?: original.chartStyle.name,
             )
         caps =
             Switch(activity).apply {
@@ -139,6 +148,8 @@ internal class ThemeEditor(
                     if (offset.text.toString() == initialOffset) null else step,
                 )
         }
+        val style = ChartStyle.valueOf(chart.selectedItem.toString())
+        if (style != original.chartStyle) theme = theme.withChartStyle(style)
         return theme.withNotificationAnimation(animation.selectedItem.toString())
     }
 
@@ -151,6 +162,7 @@ internal class ThemeEditor(
         state.putString("buttonShape", button.selectedItem.toString())
         state.putString("notificationShape", notification.selectedItem.toString())
         state.putString("notificationAnimation", animation.selectedItem.toString())
+        state.putString("chartStyle", chart.selectedItem.toString())
         state.putBoolean("allCaps", caps.isChecked)
         state.putString("offset", offset.text.toString())
     }

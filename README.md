@@ -2,8 +2,8 @@
 
 Native Kotlin Android dashboard and launcher widget (`dev.wahh.quotashell`, Android 8+).
 Dark monospace panels and a single PhantomShell-style board showing OpenAI/Codex,
-Claude and OpenCode Go together in three compact columns with donut quota charts.
-Import a PhantomShell theme or edit its widget colors, shapes, typography and glitch burst.
+Claude and OpenCode Go together in proportional columns with compact cyberpunk charts.
+Import a PhantomShell theme or edit its widget colors, shapes, typography and periodic glitch.
 
 Direct HTTPS quota reads support manually entered Codex OAuth access tokens, Claude
 OAuth access tokens with usage/profile scope, and OpenCode Go API keys. Credentials
@@ -191,11 +191,20 @@ previous-command differential baseline: **N/A**. No tests were omitted or ignore
    resize for readability. All three providers always appear side by side, in Codex,
    Claude, OpenCode Go order. The natural design is about 400×148 dp (roughly half the
    previous board height); existing instances retain their launcher-assigned size.
-   Each reported window has a donut with used percent, a short label and local reset
-   below it. Unknown usage shows an empty ring and N/A; 85%+ uses the alert color.
-   Codex reset inventory and reconnect/error/stale indicators remain visible.
-4. Tap the board for the dashboard or the Sync area for dashboard refresh. Open Settings
-   from the dashboard to reconfigure all widgets together.
+   Column widths follow each provider's chart count/style and measured text at the
+   selected font size, rather than reserving equal space. Spare width is distributed
+   proportionally; if minimum readable widths exceed the host, the whole board scales
+   down before text is ellipsized. Each reported window retains used percent, label and
+   local reset. Codex reset inventory and reconnect/error/stale indicators remain visible.
+4. Choose **Quota chart style** in Settings: **CELLS** (default) uses narrow vertical
+   segmented power cells, **TICKS** uses a 12-segment HUD arc, and **RING** keeps the donut.
+   Unknown usage has empty segments/track and **N/A**; 85%+ uses the notifications color.
+5. Tap the board for the dashboard or **[ Sync ]** to refresh directly in the widget,
+   without opening an activity. **Syncing…** remains visible while the network-constrained
+   background job is queued/running; repeated taps do not enqueue duplicate jobs.
+   Completion, failure or job cancellation clears it. Android network/battery restrictions
+   can delay it. Concurrent dashboard/periodic refreshes share the existing guarded fetch.
+   Open Settings from the dashboard to reconfigure all widgets together.
 
 Settings/data saves update all widgets immediately. Dashboard age updates every
 minute while visible; widgets request a local re-render every 30 minutes, subject
@@ -228,26 +237,35 @@ adds row spacing, and the entire board still scales to fit the widget's bounds.
 | --- | --- |
 | `window` / `outline` | Panel fills / outlines and dividers; each uses its own alpha. |
 | `text` / `subtext` / `subtext2` | Primary text / secondary text and labels / stripes, corner marks and codes. |
-| `accent` / `notifications` | Donut rings and Sync / alert glyphs, alert-card highlight and hot usage (85%+). |
+| `accent` / `notifications` | Chart segments/rings and Sync / alert glyphs, alert-card highlight and hot usage (85%+). |
 | `background` | Outer frame fill, including independent transparency. |
 | `windowShape` | `TABBED`: tab-labelled chamfered cards; `BEVEL`: chamfers without tabs; `SQUARED` and other values: rectangles. |
 | `buttonShape` | `SQUARED`: bracketed Sync; `BEVEL`: chamfered outline. Other values fall back to brackets. |
 | `notificationShape` | `INVERTED TRIANGLE`, `TRIANGLE`, `CIRCLE`, `SQUARE`, `NONE`. NONE hides the glyph, not the alert-card highlight. Unknown values use an inverted triangle. |
 | `isAllCaps` / `fontSizeOffset` | Uppercase versus natural-case board text / a bounded step added to every text size. |
-| `notificationAnimation` | `GLITCH`: brief burst on changed content or new alerts. `FADE`, `DEFAULT`, `NONE` and unknown values disable the burst. Editable in Settings. |
+| `notificationAnimation` | `GLITCH`: periodic overlay plus brief burst on changed content/new alerts. `FADE`, `DEFAULT`, `NONE` and unknown values disable both animations. Editable in Settings. |
+| `quotaShellChartStyle` | QuotaShell-only `CELLS`, `TICKS`, `RING`; stored in nonsecret theme JSON and preserved on export. PhantomShell ignores this extra key. Missing/unknown values render as CELLS; unknown values survive an unchanged edit/export. |
 
 Subtle scanlines, chromatic title offsets and horizontal slices give the board a
 static glitch style, deterministic for identical content (age-only updates do not
 change the seed). With `notificationAnimation=GLITCH`, changed data or increased alerts
 trigger three frames 150 ms apart, then a clean/static-styled frame at about 450 ms.
 Age-only updates and the first render after process start do not burst. Android may
-coalesce updates or end the app process, so launcher playback is best effort, not a
-continuous animation. There are no wake locks, foreground services or looping views;
-each RemoteViews update contains only one bounded bitmap.
+coalesce updates or end the app process, so burst playback is best effort.
 
-To disable bursts, choose **Notification animation → NONE** in the theme editor and
-Save, or enable Android's **Remove animations** (animator duration scale 0). This keeps
-the static styling. Unknown animation and shape strings remain unchanged on export.
+A launcher-driven **ViewFlipper** also cycles 40 children at 200 ms: 38 empty frames
+and two tiny transparent glitch overlays, giving a 400 ms pulse about every **8 seconds**.
+It needs no app timer, wake lock, foreground service or network request. Each update
+contains one bounded board bitmap and only 48 KiB of overlay pixels, not multiple
+full-resolution boards. **Battery tradeoff:** while visible, the launcher redraws per
+flip even for empty children; flipping pauses when the widget is not visible. Launcher
+support/playback is best effort and the cycle restarts on widget updates.
+
+To disable periodic glitch and bursts, choose **Notification animation → NONE** in the
+theme editor and Save, or enable Android's **Remove animations** (animator duration scale
+0; applied on the next widget render). The flipper is hidden and no overlay frames are
+sent when disabled. This keeps static styling. Unknown animation and shape strings
+remain unchanged on export.
 Other launcher-only keys (including button/window animations, toolkit, status bar,
 keyboard, immersive mode, bottom text, username, blur and snap-to-grid) are retained
 but do not affect the widget.

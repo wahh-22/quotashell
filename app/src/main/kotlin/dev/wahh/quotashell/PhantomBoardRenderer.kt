@@ -8,9 +8,13 @@ import android.graphics.Path
 import android.graphics.Typeface
 import dev.wahh.quotashell.core.Board
 import dev.wahh.quotashell.core.BoardCard
+import dev.wahh.quotashell.core.BoardRow
+import dev.wahh.quotashell.core.ChartStyle
 import dev.wahh.quotashell.core.DONUT_START_DEGREES
 import dev.wahh.quotashell.core.PhantomTheme
+import dev.wahh.quotashell.core.allocateColumns
 import dev.wahh.quotashell.core.donutSweep
+import dev.wahh.quotashell.core.filledSegments
 import dev.wahh.quotashell.core.glitchSeed
 import dev.wahh.quotashell.core.glitchSlices
 import kotlin.math.min
@@ -57,7 +61,9 @@ object PhantomBoardRenderer {
             )
         val metrics = Metrics(theme)
         val needed = PAD * 2 + metrics.header + metrics.footer + metrics.cardHeight
-        val fit = min(1f, min(heightDp / needed, widthDp / 380f))
+        val required = requiredWidths(board, theme)
+        val neededWidth = required.sum() + PAD * 2 + GAP * (required.size - 1)
+        val fit = min(1f, min(heightDp / needed, widthDp / neededWidth))
         val canvas = Canvas(bitmap)
         canvas.scale(density * fit, density * fit)
         val drawing = Drawing(canvas, theme, metrics, widthDp / fit, heightDp / fit, burstFrame)
@@ -72,6 +78,52 @@ object PhantomBoardRenderer {
             canvas.restore()
         }
         return bitmap
+    }
+
+    /** Same font, casing and sizes as drawText; ellipsizing is only a final safety net. */
+    private fun requiredWidths(
+        board: Board,
+        theme: PhantomTheme,
+    ): List<Float> {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        fun measure(
+            value: String,
+            size: Float,
+            heavy: Boolean = false,
+        ): Float {
+            paint.typeface = if (heavy) bold else regular
+            paint.textSize = (size + theme.fontSizeOffset).coerceAtLeast(3f)
+            return paint.measureText(theme.displayText(value))
+        }
+        val e = theme.fontSizeOffset.coerceAtLeast(0).toFloat()
+        val chartWidth =
+            when (theme.chartStyle) {
+                ChartStyle.CELLS -> 22f + e * 2
+                ChartStyle.TICKS -> 32f + e * 2
+                ChartStyle.RING -> 36f + e * 2
+            }
+        return board.cards.map { card ->
+            val slotWidth =
+                card.rows.maxOfOrNull { row ->
+                    maxOf(
+                        chartWidth,
+                        measure(row.usage, 8f, true) + 6,
+                        measure(row.label, 7.5f, true) + 4,
+                        measure(row.reset.substringBeforeLast(' ', row.reset), 6.5f) + 4,
+                        measure(row.reset.substringAfterLast(' ', ""), 7f) + 4,
+                    )
+                } ?: 0f
+            maxOf(
+                64f,
+                slotWidth * card.rows.size + 6,
+                measure(card.name, 10f, true) + 17,
+                measure(card.status, 7f) + 10,
+                measure(card.code, 6f) + 14,
+                measure(card.note ?: "", 7f) + 10,
+                if (card.rows.isEmpty()) measure("No quota data", 8f) + 10 else 0f,
+            )
+        }
     }
 
     private class Drawing(
@@ -108,10 +160,10 @@ object PhantomBoardRenderer {
             )
             header(board)
             val top = PAD + metrics.header
-            val columnWidth = (width - PAD * 2 - GAP * 2) / 3
-            board.cards.forEachIndexed { index, card ->
-                val left = PAD + index * (columnWidth + GAP)
-                card(card, left, left + columnWidth, top, height - PAD - metrics.footer)
+            val chartWeights = board.cards.map { it.rows.size.coerceAtLeast(1).toFloat() }
+            val columnWidths = allocateColumns(requiredWidths(board, theme), width - PAD * 2, GAP, chartWeights)
+            board.cards.zip(columnWidths).forEach { (card, rect) ->
+                card(card, PAD + rect.left, PAD + rect.right, top, height - PAD - metrics.footer)
             }
             scanlines()
             text(board.stamp, PAD + 4, height - PAD - 2, 7.5f, secondary)
@@ -141,11 +193,12 @@ object PhantomBoardRenderer {
                 )
             }
             val syncY = PAD + 21 + e * 2
+            val sync = if (board.syncing) "Syncing…" else "Sync"
             if (theme.renderButtonShape == "BEVEL") {
                 stroke(panelPath(right - 48 - e * 4, syncY - 9 - e, right, syncY + 3, "BEVEL"), border, 1f)
-                text("Sync", right - 5, syncY, 7.5f, accent, heavy = true, right = true)
+                text(sync, right - 5, syncY, 7.5f, accent, heavy = true, right = true)
             } else {
-                text("[ Sync ]", right, syncY, 7.5f, accent, heavy = true, right = true)
+                text("[ $sync ]", right, syncY, 7.5f, accent, heavy = true, right = true)
             }
             if (board.alertCount > 0) alert(right - 30, PAD + 3, 8f)
             paint.color = border
@@ -180,24 +233,8 @@ object PhantomBoardRenderer {
                 val cx = left + 3 + slot * (index + 0.5f)
                 val radius = min(15f + e, slot / 2 - 3)
                 val cy = y + radius + 2
-                val color = if (row.hot) warning else accent
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 2.5f
-                paint.color = border
-                canvas.drawCircle(cx, cy, radius, paint)
-                paint.color = color
-                canvas.drawArc(
-                    cx - radius,
-                    cy - radius,
-                    cx + radius,
-                    cy + radius,
-                    DONUT_START_DEGREES,
-                    donutSweep(row.percent),
-                    false,
-                    paint,
-                )
-                text(row.usage, cx, cy + 3, 8f, if (row.hot) warning else primary, heavy = true, center = true, maxWidth = radius * 2 - 3)
-                val labelY = cy + radius + 10 + e
+                chart(row, cx, cy, radius, y, slot)
+                val labelY = y + 42 + e * 3
                 text(row.label, cx, labelY, 7.5f, secondary, heavy = true, center = true, maxWidth = slot - 2)
                 val date = row.reset.substringBeforeLast(' ', row.reset)
                 val time = row.reset.substringAfterLast(' ', "")
@@ -205,6 +242,84 @@ object PhantomBoardRenderer {
                 text(time, cx, labelY + 17 + e * 2, 7f, secondary, center = true, maxWidth = slot - 2)
             }
             card.note?.let { text(it, left + 5, bottom - 4, 7f, secondary, maxWidth = right - left - 10) }
+        }
+
+        private fun chart(
+            row: BoardRow,
+            cx: Float,
+            cy: Float,
+            radius: Float,
+            top: Float,
+            slot: Float,
+        ) {
+            val color = if (row.hot) warning else accent
+            val segments = 12
+            val filled = filledSegments(row.percent, segments)
+            when (theme.chartStyle) {
+                ChartStyle.CELLS -> {
+                    val step = (25f + metrics.extra * 2) / segments
+                    paint.style = Paint.Style.FILL
+                    repeat(segments) { index ->
+                        paint.color = if (index < filled) color else border
+                        val bottom = top + 26 + metrics.extra * 2 - index * step
+                        canvas.drawRect(cx - 5 - metrics.extra, bottom - step + 0.7f, cx + 5 + metrics.extra, bottom, paint)
+                    }
+                    text(
+                        row.usage,
+                        cx,
+                        top + 35 + metrics.extra * 2,
+                        8f,
+                        if (row.hot) warning else primary,
+                        heavy = true,
+                        center = true,
+                        maxWidth = slot - 2,
+                    )
+                }
+
+                ChartStyle.TICKS, ChartStyle.RING -> {
+                    paint.style = Paint.Style.STROKE
+                    paint.strokeWidth = 2.5f
+                    if (theme.chartStyle == ChartStyle.RING) {
+                        paint.color = border
+                        canvas.drawCircle(cx, cy, radius, paint)
+                        paint.color = color
+                        canvas.drawArc(
+                            cx - radius,
+                            cy - radius,
+                            cx + radius,
+                            cy + radius,
+                            DONUT_START_DEGREES,
+                            donutSweep(row.percent),
+                            false,
+                            paint,
+                        )
+                    } else {
+                        repeat(segments) { index ->
+                            paint.color = if (index < filled) color else border
+                            canvas.drawArc(
+                                cx - radius,
+                                cy - radius,
+                                cx + radius,
+                                cy + radius,
+                                -225f + index * 22.5f,
+                                15f,
+                                false,
+                                paint,
+                            )
+                        }
+                    }
+                    text(
+                        row.usage,
+                        cx,
+                        cy + 3,
+                        8f,
+                        if (row.hot) warning else primary,
+                        heavy = true,
+                        center = true,
+                        maxWidth = slot - 2,
+                    )
+                }
+            }
         }
 
         private fun scanlines() {

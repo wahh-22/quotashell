@@ -21,7 +21,7 @@ class QuotaApplication : Application() {
     @Volatile var refreshGateway: RefreshGateway = RefreshGateway { RefreshResult.NotConfigured }
     private val executor = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
-    private var refreshing = false
+    private val refreshCallbacks = RefreshCallbacks()
 
     override fun onCreate() {
         super.onCreate()
@@ -50,6 +50,8 @@ class QuotaApplication : Application() {
                 if (updated.isEmpty()) RefreshResult.NotConfigured else RefreshResult.Updated(updated)
             }
         RefreshJob.schedule(this)
+        // Reconcile launcher-cached Syncing after process death with the scheduler's real state.
+        QuotaWidget.updateAll(this)
     }
 
     /** Main-thread mutation and publication are serialized, including the version check. */
@@ -63,11 +65,8 @@ class QuotaApplication : Application() {
 
     /** Called on main; serializes refreshes. Never advances a snapshot timestamp on failure. */
     fun refresh(callback: (String) -> Unit) {
-        if (refreshing) {
-            callback("Refresh already in progress")
-            return
-        }
-        refreshing = true
+        check(Looper.myLooper() == Looper.getMainLooper())
+        if (!refreshCallbacks.join(callback)) return
         val current = store.snapshots()
         val capturedVersions = versions.capture()
         executor.execute {
@@ -79,25 +78,28 @@ class QuotaApplication : Application() {
                     RefreshResult.Updated(current.map { it.copy(connection = Connection.ERROR, failure = Failure.SERVICE) })
                 }
             main.post {
-                refreshing = false
-                when (result) {
-                    is RefreshResult.Updated -> {
-                        val accepted = result.snapshots.filter { credentialMutations.accepts(it.provider, capturedVersions) }
-                        store.saveSnapshots(accepted)
-                        accepted.forEach(expiryNotifications::observe)
-                        callback("Refresh complete")
-                    }
+                val message =
+                    try {
+                        when (result) {
+                            is RefreshResult.Updated -> {
+                                val accepted = result.snapshots.filter { credentialMutations.accepts(it.provider, capturedVersions) }
+                                store.saveSnapshots(accepted)
+                                accepted.forEach(expiryNotifications::observe)
+                                "Refresh complete"
+                            }
 
-                    RefreshResult.NotConfigured -> {
-                        callback(
-                            if (current.any { credentialMutations.isBlocked(it.provider) }) {
-                                "Credential persistence unconfirmed. Retry save or removal in Connections."
-                            } else {
-                                "No credentials configured. Open Connections."
-                            },
-                        )
+                            RefreshResult.NotConfigured -> {
+                                if (current.any { credentialMutations.isBlocked(it.provider) }) {
+                                    "Credential persistence unconfirmed. Retry save or removal in Connections."
+                                } else {
+                                    "No credentials configured. Open Connections."
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {
+                        "Refresh failed"
                     }
-                }
+                refreshCallbacks.finish(message)
             }
         }
     }

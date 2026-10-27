@@ -29,6 +29,7 @@ data class Board(
     val cards: List<BoardCard>,
     val stamp: String,
     val alertCount: Int,
+    val syncing: Boolean = false,
 )
 
 private val resetFormat = DateTimeFormatter.ofPattern("dd MMM HH:mm", Locale.US)
@@ -51,6 +52,7 @@ fun board(
     staleAfterSeconds: Long,
     zone: ZoneId,
     allCaps: Boolean = true,
+    syncing: Boolean = false,
 ): Board {
     val cards =
         ProviderId.entries.map { provider ->
@@ -62,6 +64,7 @@ fun board(
         cards,
         latest?.let { "Last sync " + stampFormat.format(it.atZone(zone)) } ?: "No data",
         cards.count { it.alert },
+        syncing,
     ).withCasing(allCaps)
 }
 

@@ -41,6 +41,29 @@ class WidgetSizeTest(unittest.TestCase):
         self.assertLess(dp(self.attr("minResizeWidth")), dp(self.attr("minWidth")))
         self.assertLess(dp(self.attr("minResizeHeight")), dp(self.attr("minHeight")))
 
+    def test_periodic_overlay_autostarts_and_does_not_intercept_taps(self):
+        layout = ET.parse(RES / "layout" / "widget_quota.xml").getroot()  # noqa: S314
+        flipper = layout.find("ViewFlipper")
+        if flipper is None:
+            self.fail("Missing periodic glitch ViewFlipper")
+        self.assertEqual("true", flipper.get(ANDROID + "autoStart"))
+        self.assertEqual("200", flipper.get(ANDROID + "flipInterval"))
+        self.assertEqual("false", flipper.get(ANDROID + "clickable"))
+
+    def test_refresh_is_explicit_background_broadcast(self):
+        source = (RES.parent / "kotlin" / "dev" / "wahh" / "quotashell" / "QuotaWidget.kt").read_text()
+        self.assertIn("PendingIntent.getBroadcast", source)
+        self.assertIn("RefreshJob.requestWidgetRefresh", source)
+        self.assertIn("syncing = RefreshJob.widgetRefreshPending", source)
+        job = (RES.parent / "kotlin" / "dev" / "wahh" / "quotashell" / "RefreshJob.kt").read_text()
+        for symbol in ("shouldEnqueueWidgetRefresh", "NETWORK_TYPE_ANY", "jobFinished", "WIDGET_JOB_ID = 101"):
+            self.assertIn(symbol, job)
+        manifest = ET.parse(RES.parent / "AndroidManifest.xml").getroot()  # noqa: S314
+        receiver = manifest.find("application/receiver")
+        if receiver is None:
+            self.fail("Missing widget receiver")
+        self.assertEqual("false", receiver.get(ANDROID + "exported"))
+
     def test_layout_has_no_tall_fixed_rows(self):
         for name in ("widget_quota.xml",):
             layout = ET.parse(RES / "layout" / name).getroot()  # noqa: S314
@@ -72,6 +95,11 @@ class ThemeWiringTest(unittest.TestCase):
         for symbol in ("donutSweep", "glitchSlices", "glitchSeed", "drawArc", "scanlines", "columnWidth"):
             self.assertIn(symbol, renderer)
         self.assertNotIn("private fun segments", renderer)
+        for symbol in ("allocateColumns", "requiredWidths", "measureText", "ChartStyle.CELLS", "ChartStyle.TICKS", "filledSegments"):
+            self.assertIn(symbol, renderer)
+        editor = self.source("ThemeEditor.kt")
+        self.assertIn("Quota chart style", editor)
+        self.assertIn("withChartStyle", editor)
 
     def test_burst_uses_separate_updates_and_respects_animation_preferences(self):
         widget = self.source("QuotaWidget.kt")
@@ -79,6 +107,20 @@ class ThemeWiringTest(unittest.TestCase):
             self.assertIn(symbol, widget)
         self.assertIn("NOTIFICATION_ANIMATIONS", self.source("ThemeEditor.kt"))
         self.assertIn("withNotificationAnimation", self.source("ThemeEditor.kt"))
+        overlay = self.source("WidgetGlitchOverlay.kt")
+        for symbol in ("periodicGlitchEnabled", "GlitchSchedule", "View.GONE", "removeAllViews", "glitchIndices"):
+            self.assertIn(symbol, overlay)
+        self.assertIn("Bitmap.createBitmap(128, 48", overlay)
+
+    def test_startup_reconciles_cached_syncing_and_jobs_use_execution_tokens(self):
+        app = self.source("QuotaApplication.kt")
+        startup = app.split("override fun onCreate()", 1)[1].split("fun replaceCredential", 1)[0]
+        self.assertIn("QuotaWidget.updateAll(this)", startup)
+        job = self.source("RefreshJob.kt")
+        for symbol in ("JobExecutions()", "executions.start(params.jobId)", "executions.stop(params.jobId)",
+                       "executions.complete(params.jobId, token)"):
+            self.assertIn(symbol, job)
+        self.assertNotIn("mutableSetOf<JobParameters>", job)
 
     def test_theme_document_actions_and_nonsecret_storage_are_wired(self):
         settings = self.source("SettingsActivity.kt") + self.source("ThemeDocumentIo.kt")

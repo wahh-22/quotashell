@@ -22,6 +22,11 @@ class PhantomTheme private constructor(
 
     fun withNotificationAnimation(value: String): PhantomTheme = PhantomTheme(fields + ("notificationAnimation" to value))
 
+    val chartStyle: ChartStyle
+        get() = ChartStyle.entries.firstOrNull { it.name == fields["quotaShellChartStyle"] } ?: ChartStyle.CELLS
+
+    fun withChartStyle(value: ChartStyle): PhantomTheme = PhantomTheme(fields + ("quotaShellChartStyle" to value.name))
+
     val isAllCaps: Boolean get() = fields.getValue("isAllCaps") as Boolean
     val fontSizeOffset: Int get() = (fields.getValue("fontSizeOffset") as Number).toDouble().coerceIn(-4.0, 6.0).toInt()
 

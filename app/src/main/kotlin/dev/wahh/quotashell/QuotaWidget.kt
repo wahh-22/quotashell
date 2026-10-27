@@ -22,9 +22,17 @@ import java.time.ZoneId
 
 /**
  * One widget showing every provider, drawn as a PhantomShell-style board. No network work in a
- * BroadcastReceiver; refresh opens the dashboard's integration point.
+ * BroadcastReceiver; Sync schedules a debounced network-constrained background job.
  */
 class QuotaWidget : AppWidgetProvider() {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
+        super.onReceive(context, intent)
+        if (intent.action == ACTION_REFRESH) RefreshJob.requestWidgetRefresh(context)
+    }
+
     override fun onUpdate(
         context: Context,
         manager: AppWidgetManager,
@@ -55,6 +63,7 @@ class QuotaWidget : AppWidgetProvider() {
     }
 
     companion object {
+        const val ACTION_REFRESH = "dev.wahh.quotashell.action.WIDGET_REFRESH"
         private val main = Handler(Looper.getMainLooper())
         private val previous = mutableMapOf<Int, Board>()
         private val pending = mutableMapOf<Int, Runnable>()
@@ -77,7 +86,15 @@ class QuotaWidget : AppWidgetProvider() {
             }
             pending.remove(id)?.let(main::removeCallbacks)
             val store = (context.applicationContext as QuotaApplication).store
-            val content = board(store.snapshots(), Instant.now(), store.staleMinutes() * 60L, ZoneId.systemDefault(), allCaps = false)
+            val content =
+                board(
+                    store.snapshots(),
+                    Instant.now(),
+                    store.staleMinutes() * 60L,
+                    ZoneId.systemDefault(),
+                    allCaps = false,
+                    syncing = RefreshJob.widgetRefreshPending(context),
+                )
             val (widthDp, heightDp) = sizeDp(manager.getAppWidgetOptions(id))
             val theme = store.phantomTheme()
             val enabled = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
@@ -100,8 +117,10 @@ class QuotaWidget : AppWidgetProvider() {
                         ).joinToString(", ")
                     },
                 )
-                views.setOnClickPendingIntent(R.id.widget_board, activityIntent(appContext, id, "dashboard"))
-                views.setOnClickPendingIntent(R.id.widget_refresh, activityIntent(appContext, id, "refresh"))
+                WidgetGlitchOverlay.apply(appContext, views, theme, enabled)
+                views.setOnClickPendingIntent(R.id.widget_board, activityIntent(appContext, id))
+                views.setOnClickPendingIntent(R.id.widget_refresh, refreshIntent(appContext, id))
+                views.setContentDescription(R.id.widget_refresh, if (content.syncing) "Syncing…" else "Refresh quotas")
                 manager.updateAppWidget(id, views)
             }
             if (!burst) {
@@ -145,17 +164,30 @@ class QuotaWidget : AppWidgetProvider() {
             return if (width > 0 && height > 0) width.toFloat() to height.toFloat() else 400f to 148f
         }
 
+        private fun refreshIntent(
+            context: Context,
+            id: Int,
+        ): PendingIntent =
+            PendingIntent.getBroadcast(
+                context,
+                0,
+                Intent(context, QuotaWidget::class.java).apply {
+                    action = ACTION_REFRESH
+                    data = Uri.parse("quotashell://widget/$id/refresh")
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+
         private fun activityIntent(
             context: Context,
             id: Int,
-            action: String,
         ): PendingIntent {
             val intent =
                 Intent(context, MainActivity::class.java).apply {
-                    this.action = if (action == "refresh") MainActivity.ACTION_REFRESH else Intent.ACTION_MAIN
+                    action = Intent.ACTION_MAIN
                     flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 }
-            intent.data = Uri.parse("quotashell://widget/$id/$action")
+            intent.data = Uri.parse("quotashell://widget/$id/dashboard")
             return PendingIntent.getActivity(
                 context,
                 0,
