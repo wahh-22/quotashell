@@ -3,13 +3,25 @@ package dev.wahh.quotashell.core
 import java.io.IOException
 import java.time.Instant
 
-/** Manual access credentials only; never serialize these through the snapshot boundary. */
+enum class ClaudeCredentialKind { OAUTH_TOKEN, SESSION_KEY }
+
+/** Manual credentials only; never serialize these through the snapshot boundary. */
 class ManualCredential(
-    val token: String,
+    token: String,
     val accountId: String? = null,
+    val claudeKind: ClaudeCredentialKind = ClaudeCredentialKind.OAUTH_TOKEN,
+    val organizationId: String? = null,
 ) {
+    val token = if (claudeKind == ClaudeCredentialKind.SESSION_KEY) token.removePrefix("sessionKey=") else token
+
     init {
-        require(valid(token) && (accountId == null || valid(accountId))) { "Invalid credential format" }
+        require(valid(this.token) && (accountId == null || valid(accountId))) { "Invalid credential format" }
+        if (claudeKind == ClaudeCredentialKind.SESSION_KEY) {
+            require(this.token.none { it in ";,=\"\\" } && accountId == null) { "Invalid credential format" }
+            require(organizationId == null || ClaudeOrganization.validId(organizationId)) { "Invalid organization format" }
+        } else {
+            require(organizationId == null) { "Invalid credential format" }
+        }
     }
 
     override fun toString() = "ManualCredential([redacted])"
@@ -25,20 +37,41 @@ enum class Endpoint(
     CODEX_USAGE("https://chatgpt.com/backend-api/wham/usage"),
     CODEX_RESETS("https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"),
     CLAUDE_USAGE("https://api.anthropic.com/api/oauth/usage?cedar_ember=1"),
+    CLAUDE_ORGANIZATIONS("https://claude.ai/api/organizations"),
+    CLAUDE_WEB_USAGE("https://claude.ai/api/organizations"),
+    CLAUDE_WEB_USAGE_LEGACY("https://claude.ai/api/organizations"),
     GO_USAGE("https://opencode.ai/zen/go/v1/usage"),
 }
 
 class QuotaRequest(
     val endpoint: Endpoint,
     val headers: Map<String, String>,
+    organizationId: String? = null,
 ) {
+    val url: String
+
+    init {
+        val usage = endpoint in listOf(Endpoint.CLAUDE_WEB_USAGE, Endpoint.CLAUDE_WEB_USAGE_LEGACY)
+        require(if (usage) organizationId != null && ClaudeOrganization.validId(organizationId) else organizationId == null)
+        url =
+            if (usage) {
+                endpoint.url + "/$organizationId/usage" + if (endpoint == Endpoint.CLAUDE_WEB_USAGE) "?cedar_ember=1" else ""
+            } else {
+                endpoint.url
+            }
+    }
+
     override fun toString() = "QuotaRequest([redacted])"
 }
 
 class HttpReply(
     val status: Int,
     val body: String,
-)
+    val sessionRenewal: String? = null,
+    val cloudflareChallenge: Boolean = false,
+) {
+    override fun toString() = "HttpReply([redacted])"
+}
 
 fun interface Transport {
     @Throws(IOException::class)
@@ -54,6 +87,10 @@ class ProviderAdapter(
         credential: ManualCredential,
         now: Instant,
     ): ProviderSnapshot {
+        require(previous.provider == ProviderId.CLAUDE || credential.claudeKind != ClaudeCredentialKind.SESSION_KEY)
+        if (previous.provider == ProviderId.CLAUDE && credential.claudeKind == ClaudeCredentialKind.SESSION_KEY) {
+            return ClaudeSessionFetcher(transport).fetch(previous, credential, now).snapshot
+        }
         val endpoint =
             when (previous.provider) {
                 ProviderId.CODEX -> Endpoint.CODEX_USAGE

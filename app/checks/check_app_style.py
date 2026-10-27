@@ -7,6 +7,25 @@ SRC = ROOT / "app/src/main/kotlin/dev/wahh/quotashell"
 
 
 class AppStyleTest(unittest.TestCase):
+    def test_claude_session_wiring_and_sensitive_boundary(self):
+        connections = (SRC / "ConnectionsActivity.kt").read_text()
+        for contract in ("ClaudeCredentialKind.SESSION_KEY", "full claude.ai web account access",
+                         "Application/Storage", "organizationPicker", "FLAG_SECURE"):
+            self.assertIn(contract, connections)
+        application = (SRC / "QuotaApplication.kt").read_text()
+        for contract in ("rotateClaudeSession", "capturedVersions", "ClaudeSessionFetcher", "selectClaudeOrganization"):
+            self.assertIn(contract, application)
+        # Cookie values must never enter general UI, logs, widgets, intents or snapshots.
+        for path in SRC.rglob("*.kt"):
+            source = path.read_text()
+            self.assertNotIn("Log.", source)
+            self.assertNotIn("println(", source)
+            if path.name not in ("ConnectionsActivity.kt", "QuotaApplication.kt", "SecureCredentialStore.kt"):
+                self.assertNotIn("sessionKey", source)
+        snapshot = (ROOT / "app/core/src/main/kotlin/dev/wahh/quotashell/core/SnapshotCodec.kt").read_text()
+        for forbidden in ("sessionKey", "organizationId", "ManualCredential"):
+            self.assertNotIn(forbidden, snapshot)
+
     def test_hud_font_is_app_only(self):
         font = (SRC / "ui/HudFont.kt").read_text() if (SRC / "ui/HudFont.kt").exists() else ""
         self.assertIn("KodeMono[ROND,wdth,wght].ttf", font)

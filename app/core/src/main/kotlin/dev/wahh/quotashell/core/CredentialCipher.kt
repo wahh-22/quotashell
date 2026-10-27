@@ -15,10 +15,14 @@ object CredentialCipher {
         provider: ProviderId,
         credential: ManualCredential,
     ): ByteArray {
+        require(provider == ProviderId.CLAUDE || credential.claudeKind == ClaudeCredentialKind.OAUTH_TOKEN)
         val buffer = ByteArrayOutputStream()
         DataOutputStream(buffer).use {
             it.writeUTF(credential.token)
             it.writeUTF(credential.accountId ?: "")
+            // Append authenticated metadata; existing two-field OAuth records remain readable.
+            it.writeUTF(credential.claudeKind.name)
+            it.writeUTF(credential.organizationId ?: "")
         }
         val plain = buffer.toByteArray()
         try {
@@ -46,8 +50,10 @@ object CredentialCipher {
             return DataInputStream(ByteArrayInputStream(plain)).use {
                 val token = it.readUTF()
                 val account = it.readUTF().ifEmpty { null }
-                require(it.available() == 0)
-                ManualCredential(token, account)
+                val kind = if (it.available() == 0) ClaudeCredentialKind.OAUTH_TOKEN else ClaudeCredentialKind.valueOf(it.readUTF())
+                val organization = if (it.available() == 0) null else it.readUTF().ifEmpty { null }
+                require(it.available() == 0 && (provider == ProviderId.CLAUDE || kind == ClaudeCredentialKind.OAUTH_TOKEN))
+                ManualCredential(token, account, kind, organization)
             }
         } finally {
             plain.fill(0)

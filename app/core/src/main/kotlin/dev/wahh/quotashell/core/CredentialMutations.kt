@@ -28,6 +28,28 @@ class CredentialMutations(
         blocked.remove(provider)
     }
 
+    /** Same serialized storage path, but renewal must not clear valid quotas or reconnect episodes. */
+    @Synchronized fun rotateClaudeSession(
+        captured: Map<ProviderId, Long>,
+        credential: ManualCredential,
+    ): Boolean {
+        val provider = ProviderId.CLAUDE
+        require(credential.claudeKind == ClaudeCredentialKind.SESSION_KEY)
+        if (!accepts(provider, captured)) return false
+        // Fence duplicate renewals and any outcome belonging to this pre-renewal generation.
+        versions.changed(provider)
+        blocked.add(provider)
+        try {
+            writeCredential(provider, credential)
+        } catch (_: Exception) {
+            clearNotification(provider)
+            saveSnapshot(ProviderSnapshot(provider, Connection.ERROR, failure = Failure.STORAGE))
+            throw IllegalStateException("Credential persistence unconfirmed; retry save or removal")
+        }
+        blocked.remove(provider)
+        return true
+    }
+
     /** Process-local quarantine; a failed disk write cannot durably promise a restart state. */
     @Synchronized fun isBlocked(provider: ProviderId): Boolean = provider in blocked
 

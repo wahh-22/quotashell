@@ -4,12 +4,12 @@ import java.io.ByteArrayOutputStream
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
-/** No redirect (even same-origin), cookies, disk response cache, retries or custom TLS trust. */
+/** No redirect (even same-origin), cookie jar, disk response cache, retries or custom TLS trust. */
 class HttpsQuotaTransport(
     private val open: (URL) -> HttpsURLConnection = { it.openConnection() as HttpsURLConnection },
 ) : Transport {
     override fun get(request: QuotaRequest): HttpReply {
-        val connection = open(URL(request.endpoint.url))
+        val connection = open(URL(request.url))
         try {
             connection.requestMethod = "GET"
             connection.connectTimeout = 10000
@@ -20,7 +20,22 @@ class HttpsQuotaTransport(
             request.headers.forEach { (key, value) -> connection.setRequestProperty(key, value) }
             val deadline = System.nanoTime() + 25_000_000_000L
             val status = connection.responseCode
-            if (status !in 200..299) return HttpReply(status, "") // Never retain raw error bodies.
+            if (status !in 200..299) {
+                // Claude challenges are not expired sessions. Inspect only a bounded transient prefix;
+                // no error body or header is exposed to snapshots, callers, storage or logs.
+                val challenge =
+                    if (status == 403 && URL(request.url).host == "claude.ai") {
+                        if (connection.getHeaderField("cf-mitigated").equals("challenge", ignoreCase = true)) {
+                            true
+                        } else {
+                            val prefix = connection.errorStream?.use { it.readNBytesBounded(65536, deadline) }
+                            prefix?.toString(Charsets.UTF_8)?.contains("Just a moment", ignoreCase = true) == true
+                        }
+                    } else {
+                        false
+                    }
+                return HttpReply(status, "", cloudflareChallenge = challenge)
+            }
             val bytes = ByteArrayOutputStream()
             connection.inputStream.use { input ->
                 val buffer = ByteArray(8192)
@@ -32,9 +47,30 @@ class HttpsQuotaTransport(
                     bytes.write(buffer, 0, count)
                 }
             }
-            return HttpReply(status, bytes.toString("UTF-8"))
+            val renewal =
+                if (URL(request.url).host == "claude.ai") {
+                    ClaudeSessionCookies.renewal(request.url, status, connection.headerFields)
+                } else {
+                    null
+                }
+            return HttpReply(status, bytes.toString("UTF-8"), renewal)
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun java.io.InputStream.readNBytesBounded(
+        limit: Int,
+        deadline: Long,
+    ): ByteArray {
+        val bytes = ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (bytes.size() < limit) {
+            if (System.nanoTime() > deadline) throw java.net.SocketTimeoutException()
+            val count = read(buffer, 0, minOf(buffer.size, limit - bytes.size()))
+            if (count < 0) break
+            bytes.write(buffer, 0, count)
+        }
+        return bytes.toByteArray()
     }
 }

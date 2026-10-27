@@ -10,9 +10,13 @@ import android.text.InputType
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.Toast
 import dev.wahh.quotashell.core.*
 import dev.wahh.quotashell.core.ui.hudStatus
@@ -31,6 +35,9 @@ class ConnectionsActivity : Activity() {
     }
     private val states = mutableMapOf<ProviderId, android.widget.TextView>()
     private val alerts = mutableMapOf<ProviderId, View>()
+    private var organizationPicker: LinearLayout? = null
+    private var renderedOrganizations: ClaudeOrganizationState? = null
+    private var claudeMode: Spinner? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,13 +47,13 @@ class ConnectionsActivity : Activity() {
         body.addView(text("◢◤◢◤ // SECURE LINK CONSOLE", 18f))
         body.addView(
             text(
-                "Enter credentials only on this device. No official login or token renewal is provided. Replace credentials after renewing through the provider. Never send credentials in chat.",
+                "Enter credentials only on this device. No official login or OAuth token renewal is provided. Returned Claude session-cookie renewals are retained only for the current connection. Never send credentials in chat.",
                 13f,
             ),
         )
         body.addView(
             text(
-                "Expiry time is unknown. A refresh detecting HTTP 401 reports credentials expired or rejected; other failures do not mean expiry. Android may delay background refresh and notifications.",
+                "Expiry time is unknown. Refresh detects rejected credentials (HTTP 401; also ordinary claude.ai web 403, not Cloudflare challenges). Permission, rate limit and network errors do not prove expiry. Android may delay checks.",
                 13f,
             ),
         )
@@ -83,19 +90,37 @@ class ConnectionsActivity : Activity() {
                 text(
                     when (provider) {
                         ProviderId.CODEX -> "Manual Codex OAuth access token (not an OpenAI API key). Optional account/workspace ID below."
-                        ProviderId.CLAUDE -> "Manual Claude OAuth access token with user:profile scope. Inference-only/setup-token, API keys and cookies are not supported."
+                        ProviderId.CLAUDE -> "Choose OAuth token (user:profile scope) or a claude.ai sessionKey. Inference-only/setup-token and API keys cannot read usage."
                         ProviderId.OPENCODE_GO -> "Manual OpenCode Go provider API key from your OpenCode account."
                     },
                     13f,
                 ),
             )
             val token = secretField("New access token / API key")
+            val mode = if (provider == ProviderId.CLAUDE) claudeModeSelector(card, token) else null
             card.addView(token)
+            if (provider == ProviderId.CLAUDE) {
+                organizationPicker =
+                    LinearLayout(this)
+                        .apply {
+                            orientation = LinearLayout.VERTICAL
+                            isSaveEnabled = false
+                            visibility = View.GONE
+                        }.also { card.addView(it) }
+            }
             val account = if (provider == ProviderId.CODEX) secretField("Optional ChatGPT account ID").also { card.addView(it) } else null
             card.addView(
                 button("Save / replace and refresh") {
                     try {
-                        val credential = ManualCredential(token.text.toString(), account?.text?.toString()?.ifEmpty { null })
+                        val kind =
+                            if (mode?.selectedItemPosition ==
+                                1
+                            ) {
+                                ClaudeCredentialKind.SESSION_KEY
+                            } else {
+                                ClaudeCredentialKind.OAUTH_TOKEN
+                            }
+                        val credential = ManualCredential(token.text.toString(), account?.text?.toString()?.ifEmpty { null }, kind)
                         services.replaceCredential(provider, credential)
                         token.text.clear()
                         account?.text?.clear()
@@ -108,9 +133,11 @@ class ConnectionsActivity : Activity() {
                             }
                         }
                     } catch (_: IllegalArgumentException) {
-                        message("Enter a nonempty credential without whitespace, controls or non-ASCII characters.")
+                        message(
+                            "Enter a nonempty credential without whitespace or controls. Session cookie values must not contain semicolons, commas or equals signs (except a leading sessionKey=).",
+                        )
                     } catch (_: Exception) {
-                        message("Secure storage unavailable. Credential was not saved; retry or remove the connection.")
+                        message("Secure persistence is unconfirmed. Retry save or removal; do not assume rollback.")
                     }
                 },
             )
@@ -158,6 +185,123 @@ class ConnectionsActivity : Activity() {
         updateStates()
     }
 
+    private fun claudeModeSelector(
+        card: LinearLayout,
+        token: EditText,
+    ): Spinner {
+        card.addView(text("// CLAUDE CONNECTION MODE", 13f))
+        val labels = listOf("OAuth token", "claude.ai sessionKey")
+        val help =
+            text(
+                "WARNING: sessionKey grants full claude.ai web account access, not just quota reads. Stored encrypted on this device only. Never share it. Usually lasts about 28 days, extended by claude.ai activity; expiry is detected on refresh.\n" +
+                    "On your trusted browser: DevTools > Application/Storage > Cookies > https://claude.ai > sessionKey. Copy only its value (or sessionKey=value), not the whole Cookie header.",
+                13f,
+            )
+        val spinner =
+            Spinner(this).apply {
+                isSaveEnabled = false
+                contentDescription = "Claude connection mode"
+                adapter =
+                    object : ArrayAdapter<String>(this@ConnectionsActivity, android.R.layout.simple_spinner_dropdown_item, labels) {
+                        override fun getView(
+                            position: Int,
+                            convertView: View?,
+                            parent: android.view.ViewGroup,
+                        ): View =
+                            this@ConnectionsActivity.text("[ ${labels[position]} ]").apply {
+                                val theme = services.store.phantomTheme()
+                                typeface = HudFont.typeface(this@ConnectionsActivity, false)
+                                setTextColor(theme.color("text").argb)
+                                textSize = (16f + theme.fontSizeOffset).coerceAtLeast(12f)
+                                minHeight = dp(48)
+                            }
+
+                        override fun getDropDownView(
+                            position: Int,
+                            convertView: View?,
+                            parent: android.view.ViewGroup,
+                        ): View = getView(position, convertView, parent)
+                    }
+                setSelection(if (services.claudeCredentialKind() == ClaudeCredentialKind.SESSION_KEY) 1 else 0)
+            }
+        claudeMode = spinner
+        spinner.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: AdapterView<*>?,
+                    view: View?,
+                    position: Int,
+                    id: Long,
+                ) {
+                    token.text.clear()
+                    token.hint = if (position == 1) "[ New claude.ai sessionKey ]" else "[ New OAuth access token ]"
+                    help.visibility = if (position == 1) View.VISIBLE else View.GONE
+                    updateOrganizationPicker()
+                }
+
+                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            }
+        help.visibility = if (spinner.selectedItemPosition == 1) View.VISIBLE else View.GONE
+        card.addView(spinner)
+        card.addView(help)
+        return spinner
+    }
+
+    private fun updateOrganizationPicker() {
+        val picker = organizationPicker ?: return
+        val state = services.claudeOrganizations()
+        val visible = claudeMode?.selectedItemPosition == 1 && state != null && state.options.size > 1
+        picker.visibility = if (visible) View.VISIBLE else View.GONE
+        if (!visible || state === renderedOrganizations) return
+        picker.removeAllViews()
+        renderedOrganizations = state
+        val selected = (state as? ClaudeOrganizationState.Selected)?.organization?.id
+        picker.addView(
+            text(
+                if (selected ==
+                    null
+                ) {
+                    "Choose an organization explicitly to read quotas:"
+                } else {
+                    "Organization selected. Choose another to switch:"
+                },
+                13f,
+            ),
+        )
+        state!!.options.forEach { organization ->
+            picker.addView(
+                button("${if (organization.id == selected) "Selected: " else "Use: "}${organization.name}\n${organization.id}") {
+                    try {
+                        services.selectClaudeOrganization(organization.id)
+                        updateStates()
+                        services.refresh {
+                            if (!isDestroyed) {
+                                updateStates()
+                                message(it)
+                            }
+                        }
+                    } catch (_: Exception) {
+                        message("Organization choice or storage is no longer current. Refresh or retry in Connections.")
+                    }
+                }.apply { isSaveEnabled = false },
+            )
+        }
+        // Style new controls without installing duplicate theme listeners or motion loops.
+        // The existing root listener restyles them on subsequent theme changes.
+        val theme = services.store.phantomTheme()
+        for (index in 0 until picker.childCount) {
+            val label = picker.getChildAt(index) as? android.widget.TextView ?: continue
+            val size = if (label is android.widget.Button) 16f else 13f
+            label.tag = TextStyle(size, if (label is android.widget.Button) "accent" else "subtext")
+            label.textSize = (size + theme.fontSizeOffset).coerceAtLeast(12f)
+            label.setTextColor(theme.color(if (label is android.widget.Button) "accent" else "subtext").argb)
+            if (label is android.widget.Button) {
+                label.background = PhantomSurface(this, theme, button = true)
+                label.backgroundTintList = null
+            }
+        }
+    }
+
     private fun secretField(label: String) =
         EditText(this).apply {
             hint = "[ $label ]"
@@ -173,6 +317,7 @@ class ConnectionsActivity : Activity() {
         }
 
     private fun updateStates() {
+        updateOrganizationPicker()
         displayedSnapshots = services.store.snapshots()
         displayedSnapshots.forEach { snapshot ->
             val alert = snapshot.connection in listOf(Connection.RECONNECT_REQUIRED, Connection.ERROR)
@@ -208,6 +353,8 @@ class ConnectionsActivity : Activity() {
 
     override fun onPause() {
         drafts.forEach { it.text.clear() }
+        organizationPicker?.removeAllViews()
+        renderedOrganizations = null
         services.store.unlisten(onChange)
         super.onPause()
     }

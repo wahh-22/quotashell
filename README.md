@@ -6,9 +6,11 @@ Claude and OpenCode Go together in proportional columns with compact cyberpunk c
 Import a PhantomShell theme or edit its widget colors, shapes, typography and periodic glitch.
 
 Direct HTTPS quota reads support manually entered Codex OAuth access tokens, Claude
-OAuth access tokens with usage/profile scope, and OpenCode Go API keys. Credentials
-are encrypted on-device using Android Keystore AES-GCM. **No official login, automatic
-token renewal, cookie import, reset redemption or simulated quotas.** New installs
+OAuth access tokens with usage/profile scope **or claude.ai sessionKey cookies**, and
+OpenCode Go API keys. Credentials are encrypted on-device using Android Keystore
+AES-GCM. **No official login, OAuth token renewal, browser-cookie discovery, reset
+redemption or simulated quotas.** Returned Claude session-cookie renewals are retained
+only while the originating connection is still current. New installs
 show **Disconnected / No snapshot**; only tests contain sample quota data.
 
 ## Connect on your device
@@ -20,16 +22,45 @@ and are permitted to use; these credentials can grant broad account access.
 | Provider | Manual entry | Reported subscription windows |
 | --- | --- | --- |
 | OpenAI · Codex | Existing Codex OAuth **access token**, not an OpenAI API key or refresh token. Optionally enter the exact ChatGPT account/workspace ID to scope the request. Without it the provider chooses the token's default account. | Actual `limit_window_seconds` from primary/secondary windows; 5h, 7d and 30d are recognized, other durations remain explicitly reported. No inferred monthly allowance. |
-| Claude | Existing Claude OAuth **access token** with `user:profile` scope, obtained through your authorized provider sign-in workflow. Inference-only/`claude setup-token` credentials, ordinary API keys and MCP tokens are not usage credentials. | `five_hour`, `seven_day` when supplied. `extra_usage` monthly spending is **not** subscription quota. |
+| Claude | Choose **OAuth token** (existing access token with `user:profile` scope) or **claude.ai sessionKey** (your web-session cookie). Inference-only/`claude setup-token` credentials, ordinary API keys and MCP tokens are not usage credentials. | `five_hour`, `seven_day` when supplied. `extra_usage` monthly spending is **not** subscription quota. |
 | OpenCode Go | Provider-issued API key from your OpenCode account/key-management UI. | API `usage.rolling`, `weekly`, `monthly` when reported; percent is already 0–100. |
 
 Choose **Save / replace and refresh**. Fields are masked, never prefilled, and cleared
 when leaving the screen; enter token values only, without `Bearer`, quotes, spaces or
 control characters. Codex account ID is masked too. Renew credentials through their
 owner/provider, then replace them here. There is no credential-file discovery or
-OAuth client impersonation. **Claude cookies are intentionally unsupported**; no
-organization is silently selected. A 403 may indicate insufficient scope or permission,
+OAuth client impersonation. An OAuth 403 may indicate insufficient scope or permission,
 not expiry. Unsupported third-party access may fail even with a working official client.
+
+### Claude web-session mode
+
+In the Claude section choose **claude.ai sessionKey**. In a trusted browser signed in
+to your intended account, open **DevTools → Application/Storage → Cookies →
+https://claude.ai → sessionKey**. Enter only its value, optionally prefixed with
+`sessionKey=`; full Cookie headers are rejected. Input is masked and never prefilled.
+Values must be nonempty, at most 16,384 characters, without whitespace, controls,
+non-ASCII characters, semicolons, commas, equals signs, quotes or backslashes.
+
+**A sessionKey grants full claude.ai web account access, not read-only quota access.**
+Treat it as a password. It is stored encrypted on this device only, together with any
+explicit organization choice; neither goes into snapshots, ordinary preferences,
+intents, notifications, widgets, logs or backups. Do not send it through chat or adb.
+Web sessions usually last **about 28 days**, extended by claude.ai activity; this is
+not a guaranteed lifetime or an app-controlled renewal schedule. Sign-out, revocation
+or provider policy can end one sooner. Expiry/rejection is detected **on refresh**.
+
+Exactly one organization is used directly. With several, Connections shows sanitized
+names and UUIDs and requires an explicit choice before fetching quotas; it never picks
+the first. The selected organization is rechecked on every refresh. Re-choose from the
+same section after a successful organization lookup (refresh first after app restart).
+Organization names/options remain memory-only; only the chosen ID is encrypted.
+
+Successful claude.ai responses may renew `sessionKey` through `Set-Cookie`. QuotaShell
+uses the renewed value for subsequent requests and persists it through the encrypted
+credential mutation path **only if the request's credential generation is still
+current**. Late renewals cannot overwrite a replacement or recreate a removed
+connection. A failed renewal write uses the same process-local storage quarantine
+described below. No browser is launched, impersonated or read automatically.
 
 **Remove connection and cached quotas** deletes that provider's encrypted credential,
 clears its quota/reset snapshot and reconnect notification, and invalidates in-flight
@@ -51,8 +82,13 @@ is process-local, not an atomic cross-file storage transaction or a restart guar
 A successful usage refresh clears the reconnect episode. HTTP **401** means
 **credentials expired or rejected**, not proof of an exact expiration time. App and
 widget show **Reconnect required**; tap the widget state to open Connections.
-403/429/5xx/network/invalid-response failures remain separate errors and retain old
-readings with their original age. A failed Codex reset-inventory request does not
+OAuth 403, 429, 5xx, network and invalid-response failures remain separate errors and
+retain old readings with their original age. For Claude **web sessions**, upstream
+classifies ordinary 403 as authentication rejection too (after retrying a rejected
+usage reset-opt-in query without that query). A recognized Cloudflare challenge
+(`cf-mitigated: challenge` or a bounded “Just a moment” body prefix) is instead a
+permission/network-path error, **not** a stale-cookie signal. Try another network or
+OAuth mode; re-authentication does not bypass Cloudflare. A failed Codex reset-inventory request does not
 invalidate successful usage; its count becomes unknown with a separate failure label.
 Reset inventory is the server's `available_count`, never spending `credits.balance`.
 
@@ -72,7 +108,7 @@ No unsigned JWT claims are trusted and no refresh tokens are retained.
 
 ### Security and API caveats
 
-- Credentials and optional account ID live only in separate app-private encrypted
+- Credentials, optional account ID and Claude organization choice live only in separate app-private encrypted
   preferences; the nonexportable AES-256 key is generated by Android Keystore.
   GCM uses a fresh IV and binds ciphertext to its provider. Decryption/storage errors
   fail closed; they are not relabeled as credential expiry. Clear/re-enter a broken
@@ -86,8 +122,9 @@ No unsigned JWT claims are trusted and no refresh tokens are retained.
 - Requests are GET-only to fixed HTTPS endpoints using **QuotaShell/0.1** identity and
   platform TLS trust. All redirects and response caching are disabled; connection/read
   timeouts are 10s, body-loop budget 25s (a blocking read may add up to 10s), and responses
-  are capped at 256 KiB. No error body is read, no provider exception is logged, and no
-  secret is echoed in UI errors. Unknown additive response fields are ignored, not cached;
+  are capped at 256 KiB. Only Claude web HTTP 403 inspects up to 64 KiB of a transient
+  error-body prefix to identify Cloudflare; no error body is returned or persisted.
+  No provider exception is logged and no secret is echoed in UI errors. Unknown additive response fields are ignored, not cached;
   absent windows/values remain absent/unknown, zero remains zero, invalid values fail closed.
 - These are observed upstream integrations, **not a promise of stable/supported public
   subscription APIs**. No live credential/account test has been performed. Only Codex
@@ -104,7 +141,15 @@ and [Codex OAuth fetcher](https://github.com/steipete/CodexBar/blob/main/Sources
 Codex uses `/backend-api/wham/usage` and separate `/rate-limit-reset-credits` on
 `chatgpt.com` with Bearer/optional `ChatGPT-Account-Id`. Claude uses
 `https://api.anthropic.com/api/oauth/usage?cedar_ember=1` plus
-`anthropic-beta: oauth-2025-04-20`. Go uses `https://opencode.ai/zen/go/v1/usage`.
+`anthropic-beta: oauth-2025-04-20`. Claude web mode uses
+`https://claude.ai/api/organizations` then
+`https://claude.ai/api/organizations/{uuid}/usage?cedar_ember=1` with only the selected
+session cookie (never a Bearer header), JSON Accept and QuotaShell's own User-Agent.
+The [web fetcher](https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Claude/ClaudeWeb/ClaudeWebAPIFetcher.swift)
+confirms these fields, challenge/authentication distinctions and cookie rotation;
+monthly extra spending is still not a quota. A rejected optional reset query may
+retry once without `cedar_ember=1`; 401, 429 and challenges are not retried.
+Go uses `https://opencode.ai/zen/go/v1/usage`.
 Go relative resets use observed `resetInSec` aliases; absolute `resetAt`/`resetsAt`/
 `reset_at`/`resets_at` aliases are supported with epoch seconds, epoch milliseconds
 (as recognized by upstream), or ISO-8601 values.

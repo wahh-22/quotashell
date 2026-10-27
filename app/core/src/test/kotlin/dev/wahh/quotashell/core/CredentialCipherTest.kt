@@ -18,6 +18,25 @@ class CredentialCipherTest {
         assertEquals(credential.accountId, restored.accountId)
     }
 
+    @Test fun legacyTwoFieldCredentialsRemainReadableForEveryProvider() {
+        val bytes = java.io.ByteArrayOutputStream()
+        java.io.DataOutputStream(bytes).use {
+            it.writeUTF("synthetic-legacy-token")
+            it.writeUTF("synthetic-legacy-account")
+        }
+        for (provider in ProviderId.entries) {
+            val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, key)
+            cipher.updateAAD(provider.name.toByteArray(Charsets.UTF_8))
+            val record = cipher.iv + cipher.doFinal(bytes.toByteArray())
+            val restored = CredentialCipher.decrypt(key, provider, record)
+            assertEquals("synthetic-legacy-token", restored.token)
+            assertEquals("synthetic-legacy-account", restored.accountId)
+            assertEquals(ClaudeCredentialKind.OAUTH_TOKEN, restored.claudeKind)
+            assertNull(restored.organizationId)
+        }
+    }
+
     @Test fun rejectsWrongKeyProviderTamperAndInvalidRecords() {
         val record = CredentialCipher.encrypt(key, ProviderId.CODEX, ManualCredential("fixture"))
         assertThrows(Exception::class.java) { CredentialCipher.decrypt(key, ProviderId.CLAUDE, record) }

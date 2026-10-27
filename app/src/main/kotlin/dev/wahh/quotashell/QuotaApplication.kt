@@ -23,6 +23,33 @@ class QuotaApplication : Application() {
     private val main = Handler(Looper.getMainLooper())
     private val refreshCallbacks = RefreshCallbacks()
 
+    // Executor-only handoff. Consumed into a local before posting guarded publication to main.
+    private var pendingClaudeObservation: ClaudeSessionResult? = null
+    private var claudeOrganizationState: ClaudeOrganizationState? = null
+    private var claudeOrganizationGeneration = emptyMap<ProviderId, Long>()
+
+    fun claudeOrganizations(): ClaudeOrganizationState? = claudeOrganizationState
+
+    fun claudeCredentialKind(): ClaudeCredentialKind =
+        try {
+            credentials.read(ProviderId.CLAUDE)?.claudeKind ?: ClaudeCredentialKind.OAUTH_TOKEN
+        } catch (_: Exception) {
+            ClaudeCredentialKind.OAUTH_TOKEN
+        }
+
+    /** Explicit UI choice, fenced against replacement/removal since the organization response. */
+    fun selectClaudeOrganization(id: String) {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        check(credentialMutations.accepts(ProviderId.CLAUDE, claudeOrganizationGeneration))
+        check(claudeOrganizationState?.options?.any { it.id == id } == true)
+        val credential = checkNotNull(credentials.read(ProviderId.CLAUDE))
+        check(credential.claudeKind == ClaudeCredentialKind.SESSION_KEY)
+        replaceCredential(
+            ProviderId.CLAUDE,
+            ManualCredential(credential.token, claudeKind = ClaudeCredentialKind.SESSION_KEY, organizationId = id),
+        )
+    }
+
     override fun onCreate() {
         super.onCreate()
         store = SnapshotStore(this)
@@ -35,14 +62,26 @@ class QuotaApplication : Application() {
                 { store.saveSnapshots(listOf(it)) },
                 expiryNotifications::clear,
             )
-        val adapter = ProviderAdapter(HttpsQuotaTransport())
+        val transport = HttpsQuotaTransport()
+        val adapter = ProviderAdapter(transport)
+        val claudeSession = ClaudeSessionFetcher(transport)
         refreshGateway =
             RefreshGateway { current ->
                 val updated =
                     current.mapNotNull { previous ->
                         if (credentialMutations.isBlocked(previous.provider)) return@mapNotNull null
                         try {
-                            credentials.read(previous.provider)?.let { adapter.fetch(previous, it, java.time.Instant.now()) }
+                            credentials.read(previous.provider)?.let {
+                                if (previous.provider == ProviderId.CLAUDE && it.claudeKind == ClaudeCredentialKind.SESSION_KEY) {
+                                    claudeSession
+                                        .fetch(previous, it, java.time.Instant.now())
+                                        .also { observation ->
+                                            pendingClaudeObservation = observation
+                                        }.snapshot
+                                } else {
+                                    adapter.fetch(previous, it, java.time.Instant.now())
+                                }
+                            }
                         } catch (_: Exception) {
                             previous.copy(connection = Connection.ERROR, failure = Failure.STORAGE)
                         }
@@ -60,6 +99,10 @@ class QuotaApplication : Application() {
         credential: ManualCredential?,
     ) {
         check(Looper.myLooper() == Looper.getMainLooper())
+        if (provider == ProviderId.CLAUDE) {
+            claudeOrganizationState = null
+            claudeOrganizationGeneration = emptyMap()
+        }
         credentialMutations.replace(provider, credential)
     }
 
@@ -70,6 +113,7 @@ class QuotaApplication : Application() {
         val current = store.snapshots()
         val capturedVersions = versions.capture()
         executor.execute {
+            pendingClaudeObservation = null
             val result =
                 try {
                     refreshGateway.refresh(current)
@@ -77,15 +121,45 @@ class QuotaApplication : Application() {
                     // Do not log provider exceptions: they may contain sensitive response data.
                     RefreshResult.Updated(current.map { it.copy(connection = Connection.ERROR, failure = Failure.SERVICE) })
                 }
+            val claudeObservation = pendingClaudeObservation
+            pendingClaudeObservation = null
             main.post {
                 val message =
                     try {
                         when (result) {
                             is RefreshResult.Updated -> {
-                                val accepted = result.snapshots.filter { credentialMutations.accepts(it.provider, capturedVersions) }
+                                val accepted =
+                                    result.snapshots
+                                        .filter {
+                                            credentialMutations.accepts(
+                                                it.provider,
+                                                capturedVersions,
+                                            )
+                                        }.toMutableList()
+                                var rotationFailed = false
+                                if (accepted.any { it.provider == ProviderId.CLAUDE } && claudeObservation != null) {
+                                    try {
+                                        val renewal = claudeObservation.renewal
+                                        if (renewal != null) {
+                                            check(credentialMutations.rotateClaudeSession(capturedVersions, renewal))
+                                        }
+                                        claudeOrganizationState = claudeObservation.organizations
+                                        claudeOrganizationGeneration = versions.capture()
+                                    } catch (_: Exception) {
+                                        // A failed commit has already quarantined Claude and published STORAGE.
+                                        accepted.removeAll { it.provider == ProviderId.CLAUDE }
+                                        claudeOrganizationState = null
+                                        claudeOrganizationGeneration = emptyMap()
+                                        rotationFailed = true
+                                    }
+                                }
                                 store.saveSnapshots(accepted)
                                 accepted.forEach(expiryNotifications::observe)
-                                "Refresh complete"
+                                if (rotationFailed) {
+                                    "Claude session renewal could not be saved. Re-enter it in Connections."
+                                } else {
+                                    "Refresh complete"
+                                }
                             }
 
                             RefreshResult.NotConfigured -> {

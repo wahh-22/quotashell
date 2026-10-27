@@ -155,6 +155,15 @@ internal class JsonObjectParser private constructor(
     }
 
     companion object {
+        fun parseArray(text: String): List<Any?> {
+            require(text.length <= 262144)
+            val parser = JsonObjectParser(text)
+            val value = parser.value(0)
+            parser.space()
+            require(parser.position == text.length && value is List<*>)
+            return value
+        }
+
         fun parse(text: String): Map<String, Any?> {
             require(text.length <= 262144)
             val parser = JsonObjectParser(text)
