@@ -98,7 +98,10 @@ class ThemeWiringTest(unittest.TestCase):
         graphics = self.source("PhantomGraphics.kt")
         for symbol in ("substituteGlitchGlyphs", "glitchGlyphIndices", "canvas.translate(slice.offset", "frame.rgbOffset"):
             self.assertIn(symbol, graphics)
-        self.assertIn("PhantomGraphics.slices", renderer)
+        self.assertIn("glitchElementIndices(seed, graphics.elementCount)", renderer)
+        self.assertIn("graphics.element(left, top, left + chartWidth, bottom)", renderer)
+        self.assertIn("slices(canvas, right - left, bottom - top", graphics)
+        self.assertNotIn("PhantomGraphics.slices", renderer)
         self.assertIn("MAX_FRAME_BYTES = 2 * 1024 * 1024", renderer)
         self.assertNotIn("private fun segments", renderer)
         for symbol in ("allocateColumns", "requiredWidths", "graphics.measure", "ChartStyle.CELLS", "ChartStyle.TICKS", "filledSegments"):
@@ -119,6 +122,10 @@ class ThemeWiringTest(unittest.TestCase):
         self.assertNotIn("drawRect", overlay)
         self.assertNotIn("Bitmap.createBitmap", overlay)
         self.assertIn("renderFrame(index)", overlay)
+        self.assertIn("else cleanFrame", overlay)
+        self.assertIn("R.id.widget_board, if (enabled) View.INVISIBLE else View.VISIBLE", overlay)
+        self.assertNotIn("0xff shl 24", self.source("PhantomBoardRenderer.kt"))
+        self.assertIn("setOnClickPendingIntent(R.id.widget_glitch", widget)
         self.assertIn("enabled && frame == 0", widget)
         for symbol in ("geometry.syncWidth", "geometry.syncHeight", "geometry.syncTop", "geometry.syncEnd", "setViewPadding"):
             self.assertIn(symbol, widget)

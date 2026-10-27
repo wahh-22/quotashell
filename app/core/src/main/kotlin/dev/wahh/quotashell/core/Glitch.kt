@@ -44,6 +44,28 @@ fun glitchFrame(
         )
     }
 
+/** Platform-independent sparse sampling: each frame touches only one to three elements. */
+fun glitchElementIndices(
+    seed: Int,
+    elementCount: Int,
+): Set<Int> {
+    require(elementCount >= 0)
+    if (elementCount == 0) return emptySet()
+    var state = seed.toUInt() xor 0x9e3779b9u
+
+    fun next(): UInt {
+        state = state xor (state shl 13)
+        state = state xor (state shr 17)
+        state = state xor (state shl 5)
+        return state
+    }
+    val count = 1 + (next() % min(3, elementCount).toUInt()).toInt()
+    val remaining = (0 until elementCount).toMutableList()
+    return buildSet {
+        repeat(count) { add(remaining.removeAt((next() % remaining.size.toUInt()).toInt())) }
+    }
+}
+
 const val GLITCH_GLYPHS = "█▓▒░#@$%&/\\<>01"
 
 /** At most one in eight UTF-16 positions, stable across platforms; short labels still glitch. */

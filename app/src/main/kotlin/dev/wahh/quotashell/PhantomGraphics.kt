@@ -21,6 +21,37 @@ class PhantomGraphics(
     private val frame: GlitchFrame = GlitchFrame(),
     private val seed: Int = 0,
 ) {
+    private var elementIndex = 0
+    private var selected = emptySet<Int>()
+    val elementCount get() = elementIndex
+
+    fun selectElements(indices: Set<Int>) {
+        selected = indices
+        elementIndex = 0
+    }
+
+    /** Every effect is clipped to one element, never to the board background. */
+    fun element(
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        draw: (GlitchFrame) -> Unit,
+    ) {
+        val active = if (elementIndex++ in selected) frame else GlitchFrame()
+        canvas.save()
+        canvas.clipRect(left, top, right, bottom)
+        draw(active)
+        canvas.translate(left, top)
+        slices(canvas, right - left, bottom - top, active, {}, {
+            canvas.save()
+            canvas.translate(-left, -top)
+            draw(active)
+            canvas.restore()
+        })
+        canvas.restore()
+    }
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val regular = typeface(context, false)
     private val bold = typeface(context, true)
@@ -49,29 +80,34 @@ class PhantomGraphics(
         var cut = content
         while (cut.isNotEmpty() && paint.measureText(cut) > maxWidth) cut = cut.dropLast(1)
         if (cut != content && cut.isNotEmpty()) cut = cut.dropLast(1) + "…"
-        if (frame.substituteGlyphs) {
-            val textSeed = seed xor value.hashCode()
-            cut = substituteGlitchGlyphs(cut, glitchGlyphIndices(cut.length, textSeed), textSeed)
-        }
-        val offset =
-            if (frame.rgbOffset > 0f) {
-                frame.rgbOffset
-            } else if (heavy && size >= 10f) {
-                0.35f
-            } else {
-                0f
+        val textWidth = paint.measureText(cut)
+        val left =
+            when (align) {
+                Paint.Align.RIGHT -> x - textWidth
+                Paint.Align.CENTER -> x - textWidth / 2
+                else -> x
             }
-        val jitter = frame.jitterX
-        if (offset > 0f) {
-            paint.color = theme.color("accent").argb
-            paint.alpha = ((paint.color ushr 24) * 0.45f).toInt()
-            canvas.drawText(cut, x - offset + jitter, baseline, paint)
-            paint.color = theme.color("notifications").argb
-            paint.alpha = ((paint.color ushr 24) * 0.4f).toInt()
-            canvas.drawText(cut, x + offset + jitter, baseline + 0.3f, paint)
+        val bounds = paint.fontMetrics
+        val clean = cut
+        element(left, baseline + bounds.top, left + textWidth, baseline + bounds.bottom) { frame ->
+            cut = clean
+            if (frame.substituteGlyphs) {
+                val textSeed = seed xor value.hashCode()
+                cut = substituteGlitchGlyphs(cut, glitchGlyphIndices(cut.length, textSeed), textSeed)
+            }
+            val offset = frame.rgbOffset
+            val jitter = frame.jitterX
+            if (offset > 0f) {
+                paint.color = theme.color("accent").argb
+                paint.alpha = ((paint.color ushr 24) * 0.45f).toInt()
+                canvas.drawText(cut, x - offset + jitter, baseline, paint)
+                paint.color = theme.color("notifications").argb
+                paint.alpha = ((paint.color ushr 24) * 0.4f).toInt()
+                canvas.drawText(cut, x + offset + jitter, baseline + 0.3f, paint)
+            }
+            paint.color = color
+            canvas.drawText(cut, x + jitter, baseline, paint)
         }
-        paint.color = color
-        canvas.drawText(cut, x + jitter, baseline, paint)
     }
 
     private fun configure(

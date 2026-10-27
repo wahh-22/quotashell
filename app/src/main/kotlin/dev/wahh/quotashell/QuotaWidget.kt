@@ -109,29 +109,28 @@ class QuotaWidget : AppWidgetProvider() {
 
             fun publish(frame: Int) {
                 val views = RemoteViews(appContext.packageName, R.layout.widget_quota)
-                views.setImageViewBitmap(
-                    R.id.widget_board,
-                    PhantomBoardRenderer.render(appContext, content, theme, widthDp, heightDp, frame),
-                )
-                views.setContentDescription(
-                    R.id.widget_board,
+                val bitmap = PhantomBoardRenderer.render(appContext, content, theme, widthDp, heightDp, frame)
+                views.setImageViewBitmap(R.id.widget_board, bitmap)
+                val description =
                     content.cards.joinToString(". ") { card ->
                         (
                             listOf(card.name, card.status) + card.rows.map { "${it.label} ${it.usage}, reset ${it.reset}" } +
                                 listOfNotNull(card.note)
                         ).joinToString(", ")
-                    },
-                )
+                    }
+                views.setContentDescription(R.id.widget_board, description)
+                views.setContentDescription(R.id.widget_glitch, description)
                 // Recheck on the final callback too: Remove animations may change during a burst.
                 val enabled = Settings.Global.getFloat(appContext.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
                 // Successive burst payloads contain one frame; only the settled board starts a flipper.
-                WidgetGlitchOverlay.apply(appContext, views, theme, enabled && frame == 0) { seed ->
+                WidgetGlitchOverlay.apply(appContext, views, theme, enabled && frame == 0, bitmap) { seed ->
                     PhantomBoardRenderer.render(appContext, content, theme, widthDp, heightDp, seed)
                 }
                 views.setInt(R.id.widget_refresh, "setWidth", pixels(geometry.syncWidth))
                 views.setInt(R.id.widget_refresh, "setHeight", pixels(geometry.syncHeight))
                 views.setViewPadding(R.id.widget_refresh_position, 0, pixels(geometry.syncTop), pixels(geometry.syncEnd), 0)
                 views.setOnClickPendingIntent(R.id.widget_board, activityIntent(appContext, id))
+                views.setOnClickPendingIntent(R.id.widget_glitch, activityIntent(appContext, id))
                 views.setOnClickPendingIntent(R.id.widget_refresh, refreshIntent(appContext, id))
                 views.setContentDescription(R.id.widget_refresh, if (content.syncing) "Syncing…" else "Refresh quotas")
                 manager.updateAppWidget(id, views)

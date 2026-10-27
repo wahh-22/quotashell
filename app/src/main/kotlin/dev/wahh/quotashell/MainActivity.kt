@@ -11,8 +11,10 @@ import android.widget.Toast
 import dev.wahh.quotashell.core.Connection
 import dev.wahh.quotashell.core.ProviderId
 import dev.wahh.quotashell.core.ProviderSnapshot
+import dev.wahh.quotashell.core.formatLocalReset
 import dev.wahh.quotashell.core.present
 import java.time.Instant
+import java.time.ZoneId
 
 class MainActivity : Activity() {
     private val services get() = application as QuotaApplication
@@ -108,7 +110,7 @@ class MainActivity : Activity() {
             }
             card.addView(text("${display.state} · ${display.age}"))
             if (display.windows.isEmpty()) card.addView(text("No reported quota windows"))
-            for (window in display.windows) {
+            for ((quota, window) in snapshot.windows.zip(display.windows)) {
                 val row = LinearLayout(this).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
                 row.addView(quotaChart(window.progress))
                 val labels =
@@ -117,7 +119,7 @@ class MainActivity : Activity() {
                         layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
                     }
                 labels.addView(text("${window.title} · ${window.usage}", 20f))
-                labels.addView(text(window.reset, 14f))
+                labels.addView(text(formatLocalReset(quota.resetsAt, ZoneId.systemDefault()), 14f))
                 row.addView(labels)
                 card.addView(row)
             }

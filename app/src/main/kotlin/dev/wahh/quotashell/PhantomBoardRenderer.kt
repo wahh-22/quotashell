@@ -11,12 +11,12 @@ import dev.wahh.quotashell.core.BoardCard
 import dev.wahh.quotashell.core.BoardRow
 import dev.wahh.quotashell.core.ChartStyle
 import dev.wahh.quotashell.core.DONUT_START_DEGREES
-import dev.wahh.quotashell.core.GlitchFrame
 import dev.wahh.quotashell.core.PhantomTheme
 import dev.wahh.quotashell.core.allocateColumns
 import dev.wahh.quotashell.core.boardFit
 import dev.wahh.quotashell.core.donutSweep
 import dev.wahh.quotashell.core.filledSegments
+import dev.wahh.quotashell.core.glitchElementIndices
 import dev.wahh.quotashell.core.glitchFrame
 import dev.wahh.quotashell.core.glitchSeed
 import dev.wahh.quotashell.core.quotaItemWidth
@@ -88,19 +88,16 @@ object PhantomBoardRenderer {
         val seed = board.glitchSeed() + burstFrame
         val frame = glitchFrame(seed, burstFrame != 0)
         val graphics = PhantomGraphics(context, canvas, theme, frame, seed)
-        val drawing = Drawing(canvas, graphics, theme, Metrics(theme), widthDp / fit, heightDp / fit, frame, geometry.syncWidth / fit)
-        // Glitch overlays must completely cover the clean base, including alpha-themed panels.
-        val clearColor = if (burstFrame == 0) 0 else theme.color("background").argb or (0xff shl 24)
+        val drawing = Drawing(canvas, graphics, theme, Metrics(theme), widthDp / fit, heightDp / fit, geometry.syncWidth / fit)
+        // The flipper replaces the base: keep alpha identical in clean and glitch frames.
+        val clearColor = 0
         canvas.drawColor(clearColor, PorterDuff.Mode.SRC)
         drawing.draw(board)
-        PhantomGraphics.slices(
-            canvas,
-            widthDp / fit,
-            heightDp / fit,
-            frame,
-            clear = { canvas.drawColor(clearColor, PorterDuff.Mode.SRC) },
-            draw = { drawing.draw(board) },
-        )
+        if (burstFrame != 0) {
+            graphics.selectElements(glitchElementIndices(seed, graphics.elementCount))
+            canvas.drawColor(clearColor, PorterDuff.Mode.SRC)
+            drawing.draw(board)
+        }
         return bitmap
     }
 
@@ -143,7 +140,6 @@ object PhantomBoardRenderer {
         private val metrics: Metrics,
         private val width: Float,
         private val height: Float,
-        private val frame: GlitchFrame,
         private val syncWidth: Float,
     ) {
         private val accent = theme.color("accent").argb
@@ -256,56 +252,57 @@ object PhantomBoardRenderer {
             bottom: Float,
         ) {
             val color = if (row.hot) warning else accent
-
-            fun drawChart(
-                tint: Int?,
-                dx: Float,
-            ) {
-                canvas.save()
-                canvas.translate(dx + frame.jitterX, 0f)
-                val filled = filledSegments(row.percent, 12)
-                if (theme.chartStyle == ChartStyle.CELLS) {
-                    paint.style = Paint.Style.FILL
-                    val step = (bottom - top) / 12
-                    repeat(12) { index ->
-                        paint.color = tint ?: if (index < filled) color else border
-                        val b = bottom - index * step
-                        canvas.drawRect(left, b - step + 0.8f, left + chartWidth, b, paint)
-                    }
-                } else {
-                    val radius = chartWidth / 2 - 2
-                    val cx = left + chartWidth / 2
-                    val cy = (top + bottom) / 2
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 2.5f
-                    if (theme.chartStyle == ChartStyle.RING) {
-                        paint.color = tint ?: border
-                        canvas.drawCircle(cx, cy, radius, paint)
-                        paint.color = tint ?: color
-                        canvas.drawArc(
-                            cx - radius,
-                            cy - radius,
-                            cx + radius,
-                            cy + radius,
-                            DONUT_START_DEGREES,
-                            donutSweep(row.percent),
-                            false,
-                            paint,
-                        )
-                    } else if (theme.chartStyle == ChartStyle.TICKS) {
+            graphics.element(left, top, left + chartWidth, bottom) { frame ->
+                fun drawChart(
+                    tint: Int?,
+                    dx: Float,
+                ) {
+                    canvas.save()
+                    canvas.translate(dx + frame.jitterX, 0f)
+                    val filled = filledSegments(row.percent, 12)
+                    if (theme.chartStyle == ChartStyle.CELLS) {
+                        paint.style = Paint.Style.FILL
+                        val step = (bottom - top) / 12
                         repeat(12) { index ->
                             paint.color = tint ?: if (index < filled) color else border
-                            canvas.drawArc(cx - radius, cy - radius, cx + radius, cy + radius, -225f + index * 22.5f, 15f, false, paint)
+                            val b = bottom - index * step
+                            canvas.drawRect(left, b - step + 0.8f, left + chartWidth, b, paint)
+                        }
+                    } else {
+                        val radius = chartWidth / 2 - 2
+                        val cx = left + chartWidth / 2
+                        val cy = (top + bottom) / 2
+                        paint.style = Paint.Style.STROKE
+                        paint.strokeWidth = 2.5f
+                        if (theme.chartStyle == ChartStyle.RING) {
+                            paint.color = tint ?: border
+                            canvas.drawCircle(cx, cy, radius, paint)
+                            paint.color = tint ?: color
+                            canvas.drawArc(
+                                cx - radius,
+                                cy - radius,
+                                cx + radius,
+                                cy + radius,
+                                DONUT_START_DEGREES,
+                                donutSweep(row.percent),
+                                false,
+                                paint,
+                            )
+                        } else if (theme.chartStyle == ChartStyle.TICKS) {
+                            repeat(12) { index ->
+                                paint.color = tint ?: if (index < filled) color else border
+                                canvas.drawArc(cx - radius, cy - radius, cx + radius, cy + radius, -225f + index * 22.5f, 15f, false, paint)
+                            }
                         }
                     }
+                    canvas.restore()
                 }
-                canvas.restore()
+                if (frame.rgbOffset > 0f) {
+                    drawChart(accent, -frame.rgbOffset)
+                    drawChart(warning, frame.rgbOffset)
+                }
+                drawChart(null, 0f)
             }
-            if (frame.rgbOffset > 0f) {
-                drawChart(accent, -frame.rgbOffset)
-                drawChart(warning, frame.rgbOffset)
-            }
-            drawChart(null, 0f)
         }
 
         private fun text(

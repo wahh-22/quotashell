@@ -7,6 +7,24 @@ SRC = ROOT / "app/src/main/kotlin/dev/wahh/quotashell"
 
 
 class AppStyleTest(unittest.TestCase):
+    def test_shared_outer_spacing(self):
+        ui = (SRC / "TerminalUi.kt").read_text()
+        self.assertIn("view.setPadding(dp(16), dp(16), dp(16), dp(16))", ui)
+        self.assertIn("setPadding(0, 0, 0, 0)", ui)
+
+    def test_dashboard_reuses_local_reset_formatter(self):
+        dashboard = (SRC / "MainActivity.kt").read_text()
+        self.assertIn("formatLocalReset(", dashboard)
+        self.assertIn("ZoneId.systemDefault()", dashboard)
+        self.assertNotIn("text(window.reset", dashboard)
+
+    def test_only_selected_views_glitch(self):
+        effects = (SRC / "ui/AppGlitch.kt").read_text()
+        self.assertIn("glitchElementIndices", effects)
+        self.assertIn("selectedViews", effects)
+        self.assertIn("getGlobalVisibleRect", effects)
+        self.assertIn("view.draw(canvas)", effects)
+
     def test_shared_typeface_and_live_theme(self):
         ui = (SRC / "TerminalUi.kt").read_text()
         self.assertIn("PhantomGraphics.typeface", ui)

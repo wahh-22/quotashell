@@ -74,6 +74,14 @@ internal fun Activity.terminalContent(
     view: View,
     openingGlitch: Boolean = true,
 ) {
+    // Keep the gutter outside panel backgrounds, inside the scrollable viewport.
+    if (view is ScrollView) {
+        view.setPadding(dp(16), dp(16), dp(16), dp(16))
+        view.clipToPadding = false
+        view.getChildAt(0)?.let { child ->
+            if (child.tag !is PanelStyle) child.setPadding(0, 0, 0, 0)
+        }
+    }
     val frame =
         FrameLayout(this).apply {
             addView(view)

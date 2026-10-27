@@ -33,6 +33,13 @@ data class Board(
 )
 
 private val resetFormat = DateTimeFormatter.ofPattern("dd MMM HH:mm", Locale.US)
+
+/** Shared app/widget reset presentation; callers choose the device zone at the boundary. */
+fun formatLocalReset(
+    instant: Instant?,
+    zone: ZoneId,
+): String = instant?.let { resetFormat.format(it.atZone(zone)) } ?: "--"
+
 private val stampFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
 
 private val codes =
@@ -91,7 +98,7 @@ private fun card(
                 shown.title,
                 percent?.let { "$it%" } ?: "N/A",
                 percent,
-                window.resetsAt?.let { resetFormat.format(it.atZone(zone)) } ?: "--",
+                formatLocalReset(window.resetsAt, zone),
                 percent != null && percent >= HOT_PERCENT,
             )
         }

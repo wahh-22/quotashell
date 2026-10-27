@@ -221,7 +221,10 @@ Adwaita Mono, theme-colored text and angular outlined panels with tab codes, str
 marks and binary corner decoration. Window/button shapes, notification glyphs,
 all-caps and font offset apply throughout, including native input and picker labels.
 The dashboard places larger CELLS/TICKS/RING charts left of quota text; reconnect/error
-states show the theme's alert glyph and color. System bars use the theme background.
+states show the theme's alert glyph and color. Dashboard reset dates use the same
+local-zone formatter as the widget (`dd MMM HH:mm`, or `--` when unknown).
+All screens share a 16 dp outer gutter, outside their panel backgrounds.
+System bars use the theme background.
 Native document/permission pickers remain Android-owned UI.
 
 Theme changes restyle existing controls through SnapshotStore listeners without a
@@ -231,8 +234,9 @@ retain entered case; all-caps is presentation-only on labels. Buttons, toggles,
 spinners and input fields have at least 48 dp touch heights. Real native labels and
 chart/alert descriptions remain available to accessibility services.
 
-On screen open/resume and refresh completion, visible **labels only** briefly gain
-deterministic glyph substitution, RGB split and displaced text slices. Two frames
+On screen open/resume and refresh completion, **1–3 randomly selected visible leaf
+views** briefly gain jitter/displaced slices; selected labels also gain glyph substitution
+and a color split. Selection is deterministic per frame seed. Two frames
 settle after **300 ms**, with no periodic Activity animation or background bands.
 Credential and other EditText content is never sampled for this effect. Effects
 require `notificationAnimation=GLITCH` and nonzero system animator duration scale;
@@ -278,31 +282,32 @@ adds row spacing, and the entire board still scales to fit the widget's bounds.
 | `quotaShellChartStyle` | QuotaShell-only `CELLS`, `TICKS`, `RING`; stored in nonsecret theme JSON and preserved on export. PhantomShell ignores this extra key. Missing/unknown values render as CELLS; unknown values survive an unchanged edit/export. |
 
 Glitch acts on **text and charts**, not background lines: displaced horizontal slices
-of the rendered scene, accent/notification-color split copies, small element jitter,
-and brief symbol substitution in text. Seeds are deterministic for identical content
-(age-only updates do not change the seed). The settled board has only subtle chromatic
-splits on large titles: no scanlines or moving background bands.
+within **1–3 selected element bounds**, accent/notification-color split copies, small
+element jitter, and brief symbol substitution in text. Distinct elements are selected
+deterministically from each frame seed; everything else stays clean. Seeds are
+deterministic for identical content (age-only updates do not change the seed).
+The settled board is clean: no static chromatic split, scanlines or background bands.
 With `notificationAnimation=GLITCH`, changed data or increased alerts trigger three
 frames 150 ms apart, then a settled frame at about 450 ms. Age-only updates and the
 first render after process start do not burst. Android may coalesce updates or end
 the app process, so burst playback is best effort.
 
-A launcher-driven **ViewFlipper** cycles 40 children at 200 ms: 38 empty children over
-one clean base ImageView and two opaque full-board glitch frames, giving a 400 ms pulse
-about every **8 seconds**. This avoids any dependency on bitmap-cache deduplication.
+A launcher-driven **ViewFlipper** cycles 40 children at 200 ms: 38 clean frames and
+two sparse element-glitch frames, giving a 400 ms pulse about every **8 seconds**.
+The clean children reuse the same Bitmap instance through RemoteViews' bitmap cache;
+the base ImageView is hidden while flipping, preserving theme transparency.
 At 405×248 dp and density 2.25, each bitmap is 911×558 pixels (2,033,352 bytes);
 three use 6,100,056 bytes (~5.82 MiB). Larger hosts reduce bitmap density to keep the
-three-frame payload below 6 MiB. Burst updates carry only one bitmap. Opaque glitch
-frames briefly flatten background transparency so the clean base cannot ghost through.
+three-frame payload below 6 MiB. Burst updates carry only one bitmap.
 No app timer, wake lock, foreground service or network request is needed for periodic
 playback. **Battery tradeoff:** while visible, the launcher redraws per flip even for
-empty children; flipping pauses when not visible. Launcher support/playback is best
+clean children; flipping pauses when not visible. Launcher support/playback is best
 effort and the cycle restarts on widget updates.
 
 To disable periodic glitch and bursts, choose **Notification animation → NONE** in the
 theme editor and Save, or enable Android's **Remove animations** (animator duration scale
 0; applied on the next widget render). The flipper is hidden and no glitch frames are
-sent when disabled. This keeps only the subtle static title split. Unknown animation and shape strings
+sent when disabled. The board stays clean. Unknown animation and shape strings
 remain unchanged on export.
 Other launcher-only keys (including button/window animations, toolkit, status bar,
 keyboard, immersive mode, bottom text, username, blur and snap-to-grid) are retained
