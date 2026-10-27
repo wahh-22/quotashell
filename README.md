@@ -37,8 +37,8 @@ your browser or file manager, and open it. Release APKs are **not debuggable** a
 signed with the project release key; verify before installing:
 
 ```sh
-shasum -a 256 QuotaShell-0.1.0.apk          # compare with the release notes
-apksigner verify --print-certs QuotaShell-0.1.0.apk
+shasum -a 256 QuotaShell-0.1.1.apk          # compare with the release notes
+apksigner verify --print-certs QuotaShell-0.1.1.apk
 # Signer #1 certificate SHA-256 digest:
 # 296e17914b66b9d9204a63aa71fb47466cb4ae6bbe69e49b0a7a5274ec2bc700
 ```
