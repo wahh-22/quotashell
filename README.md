@@ -629,3 +629,11 @@ Official references: [Android widgets](https://developer.android.com/develop/ui/
 [widget configuration](https://developer.android.com/develop/ui/views/appwidgets/configuration),
 [AGP 8.7 compatibility](https://developer.android.com/build/releases/past-releases/agp-8-7-0-release-notes),
 [Gradle wrapper checksums](https://gradle.org/release-checksums/).
+
+## License
+
+QuotaShell's source code is released under the [MIT License](LICENSE).
+
+Bundled fonts keep their own license: Adwaita Mono and Kode Mono are distributed under
+the SIL Open Font License 1.1 (see `app/src/main/assets/fonts/OFL-AdwaitaMono.txt` and
+`app/src/main/assets/fonts/KodeMono-OFL.txt`), not under MIT.
