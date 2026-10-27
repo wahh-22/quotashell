@@ -102,6 +102,11 @@ class QuotaWidget : AppWidgetProvider() {
             previous[id] = content
             val appContext = context.applicationContext
 
+            val geometry = PhantomBoardRenderer.layout(appContext, content, theme, widthDp, heightDp)
+            val density = appContext.resources.displayMetrics.density
+
+            fun pixels(dp: Float): Int = (dp * density).toInt().coerceAtLeast(1)
+
             fun publish(frame: Int) {
                 val views = RemoteViews(appContext.packageName, R.layout.widget_quota)
                 views.setImageViewBitmap(
@@ -117,7 +122,15 @@ class QuotaWidget : AppWidgetProvider() {
                         ).joinToString(", ")
                     },
                 )
-                WidgetGlitchOverlay.apply(appContext, views, theme, enabled)
+                // Recheck on the final callback too: Remove animations may change during a burst.
+                val enabled = Settings.Global.getFloat(appContext.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
+                // Successive burst payloads contain one frame; only the settled board starts a flipper.
+                WidgetGlitchOverlay.apply(appContext, views, theme, enabled && frame == 0) { seed ->
+                    PhantomBoardRenderer.render(appContext, content, theme, widthDp, heightDp, seed)
+                }
+                views.setInt(R.id.widget_refresh, "setWidth", pixels(geometry.syncWidth))
+                views.setInt(R.id.widget_refresh, "setHeight", pixels(geometry.syncHeight))
+                views.setViewPadding(R.id.widget_refresh_position, 0, pixels(geometry.syncTop), pixels(geometry.syncEnd), 0)
                 views.setOnClickPendingIntent(R.id.widget_board, activityIntent(appContext, id))
                 views.setOnClickPendingIntent(R.id.widget_refresh, refreshIntent(appContext, id))
                 views.setContentDescription(R.id.widget_refresh, if (content.syncing) "Syncing…" else "Refresh quotas")

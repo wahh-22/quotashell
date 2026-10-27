@@ -5,6 +5,9 @@
     <ViewFlipper android:id="@+id/widget_glitch" android:layout_width="match_parent" android:layout_height="match_parent"
         android:autoStart="true" android:flipInterval="200" android:clickable="false" android:focusable="false"
         android:importantForAccessibility="no" />
-    <TextView android:id="@+id/widget_refresh" android:layout_width="72dp" android:layout_height="32dp"
-        android:layout_gravity="top|end" android:contentDescription="@string/refresh" />
+    <FrameLayout android:id="@+id/widget_refresh_position" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:clickable="false" android:focusable="false">
+        <TextView android:id="@+id/widget_refresh" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_gravity="top|end" android:contentDescription="@string/refresh" />
+    </FrameLayout>
 </FrameLayout>

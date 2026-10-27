@@ -189,13 +189,14 @@ previous-command differential baseline: **N/A**. No tests were omitted or ignore
 3. In PhantomShell or another widget-capable launcher, add **QuotaShell · all providers**
    and Save; Cancel does not add the widget. The default footprint is about 4×2 cells;
    resize for readability. All three providers always appear side by side, in Codex,
-   Claude, OpenCode Go order. The natural design is about 400×148 dp (roughly half the
-   previous board height); existing instances retain their launcher-assigned size.
-   Column widths follow each provider's chart count/style and measured text at the
-   selected font size, rather than reserving equal space. Spare width is distributed
-   proportionally; if minimum readable widths exceed the host, the whole board scales
-   down before text is ellipsized. Each reported window retains used percent, label and
-   local reset. Codex reset inventory and reconnect/error/stale indicators remain visible.
+   Claude, OpenCode Go order; existing instances retain their launcher-assigned size.
+   Each window places its chart on the **left** and a larger used percent, window label,
+   local reset date and time on the **right**. CELLS bars span the available card height.
+   Column widths follow chart-plus-text measurements; spare width follows chart counts,
+   so Codex does not reserve the same space as a provider with three windows. The whole
+   board scales up as well as down to fit both host dimensions (enlargement capped at
+   1.8×). Codex reset inventory and reconnect/error/stale indicators remain visible.
+   The invisible Sync hit target uses the same scaled geometry as the drawn button.
 4. Choose **Quota chart style** in Settings: **CELLS** (default) uses narrow vertical
    segmented power cells, **TICKS** uses a 12-segment HUD arc, and **RING** keeps the donut.
    Unknown usage has empty segments/track and **N/A**; 85%+ uses the notifications color.
@@ -243,28 +244,35 @@ adds row spacing, and the entire board still scales to fit the widget's bounds.
 | `buttonShape` | `SQUARED`: bracketed Sync; `BEVEL`: chamfered outline. Other values fall back to brackets. |
 | `notificationShape` | `INVERTED TRIANGLE`, `TRIANGLE`, `CIRCLE`, `SQUARE`, `NONE`. NONE hides the glyph, not the alert-card highlight. Unknown values use an inverted triangle. |
 | `isAllCaps` / `fontSizeOffset` | Uppercase versus natural-case board text / a bounded step added to every text size. |
-| `notificationAnimation` | `GLITCH`: periodic overlay plus brief burst on changed content/new alerts. `FADE`, `DEFAULT`, `NONE` and unknown values disable both animations. Editable in Settings. |
+| `notificationAnimation` | `GLITCH`: periodic element-glitch frames plus a brief burst on changed content/new alerts. `FADE`, `DEFAULT`, `NONE` and unknown values disable both animations. Editable in Settings. |
 | `quotaShellChartStyle` | QuotaShell-only `CELLS`, `TICKS`, `RING`; stored in nonsecret theme JSON and preserved on export. PhantomShell ignores this extra key. Missing/unknown values render as CELLS; unknown values survive an unchanged edit/export. |
 
-Subtle scanlines, chromatic title offsets and horizontal slices give the board a
-static glitch style, deterministic for identical content (age-only updates do not
-change the seed). With `notificationAnimation=GLITCH`, changed data or increased alerts
-trigger three frames 150 ms apart, then a clean/static-styled frame at about 450 ms.
-Age-only updates and the first render after process start do not burst. Android may
-coalesce updates or end the app process, so burst playback is best effort.
+Glitch acts on **text and charts**, not background lines: displaced horizontal slices
+of the rendered scene, accent/notification-color split copies, small element jitter,
+and brief symbol substitution in text. Seeds are deterministic for identical content
+(age-only updates do not change the seed). The settled board has only subtle chromatic
+splits on large titles: no scanlines or moving background bands.
+With `notificationAnimation=GLITCH`, changed data or increased alerts trigger three
+frames 150 ms apart, then a settled frame at about 450 ms. Age-only updates and the
+first render after process start do not burst. Android may coalesce updates or end
+the app process, so burst playback is best effort.
 
-A launcher-driven **ViewFlipper** also cycles 40 children at 200 ms: 38 empty frames
-and two tiny transparent glitch overlays, giving a 400 ms pulse about every **8 seconds**.
-It needs no app timer, wake lock, foreground service or network request. Each update
-contains one bounded board bitmap and only 48 KiB of overlay pixels, not multiple
-full-resolution boards. **Battery tradeoff:** while visible, the launcher redraws per
-flip even for empty children; flipping pauses when the widget is not visible. Launcher
-support/playback is best effort and the cycle restarts on widget updates.
+A launcher-driven **ViewFlipper** cycles 40 children at 200 ms: 38 empty children over
+one clean base ImageView and two opaque full-board glitch frames, giving a 400 ms pulse
+about every **8 seconds**. This avoids any dependency on bitmap-cache deduplication.
+At 405×248 dp and density 2.25, each bitmap is 911×558 pixels (2,033,352 bytes);
+three use 6,100,056 bytes (~5.82 MiB). Larger hosts reduce bitmap density to keep the
+three-frame payload below 6 MiB. Burst updates carry only one bitmap. Opaque glitch
+frames briefly flatten background transparency so the clean base cannot ghost through.
+No app timer, wake lock, foreground service or network request is needed for periodic
+playback. **Battery tradeoff:** while visible, the launcher redraws per flip even for
+empty children; flipping pauses when not visible. Launcher support/playback is best
+effort and the cycle restarts on widget updates.
 
 To disable periodic glitch and bursts, choose **Notification animation → NONE** in the
 theme editor and Save, or enable Android's **Remove animations** (animator duration scale
-0; applied on the next widget render). The flipper is hidden and no overlay frames are
-sent when disabled. This keeps static styling. Unknown animation and shape strings
+0; applied on the next widget render). The flipper is hidden and no glitch frames are
+sent when disabled. This keeps only the subtle static title split. Unknown animation and shape strings
 remain unchanged on export.
 Other launcher-only keys (including button/window animations, toolkit, status bar,
 keyboard, immersive mode, bottom text, username, blur and snap-to-grid) are retained

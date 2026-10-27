@@ -81,7 +81,7 @@ class ThemeWiringTest(unittest.TestCase):
         return (RES.parent / "kotlin" / "dev" / "wahh" / "quotashell" / name).read_text()
 
     def test_board_uses_phantom_theme_and_every_rendered_slot(self):
-        renderer = self.source("PhantomBoardRenderer.kt")
+        renderer = self.source("PhantomBoardRenderer.kt") + self.source("PhantomGraphics.kt")
         self.assertIn("theme: PhantomTheme", renderer)
         for slot in ("outline", "window", "text", "subtext", "subtext2", "accent", "notifications", "background"):
             self.assertIn('theme.color("' + slot + '")', renderer)
@@ -92,10 +92,16 @@ class ThemeWiringTest(unittest.TestCase):
 
     def test_compact_donuts_and_deterministic_glitch_are_wired(self):
         renderer = self.source("PhantomBoardRenderer.kt")
-        for symbol in ("donutSweep", "glitchSlices", "glitchSeed", "drawArc", "scanlines", "columnWidth"):
+        for symbol in ("donutSweep", "glitchFrame", "glitchSeed", "drawArc", "columnWidth", "boardFit", "quotaItemWidth"):
             self.assertIn(symbol, renderer)
+        self.assertNotIn("scanlines", renderer)
+        graphics = self.source("PhantomGraphics.kt")
+        for symbol in ("substituteGlitchGlyphs", "glitchGlyphIndices", "canvas.translate(slice.offset", "frame.rgbOffset"):
+            self.assertIn(symbol, graphics)
+        self.assertIn("PhantomGraphics.slices", renderer)
+        self.assertIn("MAX_FRAME_BYTES = 2 * 1024 * 1024", renderer)
         self.assertNotIn("private fun segments", renderer)
-        for symbol in ("allocateColumns", "requiredWidths", "measureText", "ChartStyle.CELLS", "ChartStyle.TICKS", "filledSegments"):
+        for symbol in ("allocateColumns", "requiredWidths", "graphics.measure", "ChartStyle.CELLS", "ChartStyle.TICKS", "filledSegments"):
             self.assertIn(symbol, renderer)
         editor = self.source("ThemeEditor.kt")
         self.assertIn("Quota chart style", editor)
@@ -110,7 +116,13 @@ class ThemeWiringTest(unittest.TestCase):
         overlay = self.source("WidgetGlitchOverlay.kt")
         for symbol in ("periodicGlitchEnabled", "GlitchSchedule", "View.GONE", "removeAllViews", "glitchIndices"):
             self.assertIn(symbol, overlay)
-        self.assertIn("Bitmap.createBitmap(128, 48", overlay)
+        self.assertNotIn("drawRect", overlay)
+        self.assertNotIn("Bitmap.createBitmap", overlay)
+        self.assertIn("renderFrame(index)", overlay)
+        self.assertIn("enabled && frame == 0", widget)
+        for symbol in ("geometry.syncWidth", "geometry.syncHeight", "geometry.syncTop", "geometry.syncEnd", "setViewPadding"):
+            self.assertIn(symbol, widget)
+        self.assertIn("burstFrame != 0", self.source("PhantomBoardRenderer.kt"))
 
     def test_startup_reconciles_cached_syncing_and_jobs_use_execution_tokens(self):
         app = self.source("QuotaApplication.kt")
