@@ -13,6 +13,22 @@ redemption or simulated quotas.** Returned Claude session-cookie renewals are re
 only while the originating connection is still current. New installs
 show **Disconnected / No snapshot**; only tests contain sample quota data.
 
+## Screenshots
+
+Captured on a Galaxy Z Fold7 (Android 16) running the PhantomShell launcher with real
+accounts.
+
+**Home-screen widget** — all three providers, segmented quota bars, local reset times,
+per-provider sync time and an in-widget `[ Sync ]` button:
+
+![QuotaShell widget on the PhantomShell home screen](docs/screenshots/widget.png)
+
+| Dashboard (terminal HUD) | Theme settings |
+| --- | --- |
+| ![QuotaShell dashboard](docs/screenshots/dashboard.png) | ![QuotaShell appearance settings](docs/screenshots/settings.png) |
+
+The Connections screen blocks screenshots on purpose (`FLAG_SECURE`), so it is not shown.
+
 ## Connect on your device
 
 Never send tokens, account IDs, keys, credential files or screenshots of them in chat.
@@ -127,7 +143,8 @@ No unsigned JWT claims are trusted and no refresh tokens are retained.
   No provider exception is logged and no secret is echoed in UI errors. Unknown additive response fields are ignored, not cached;
   absent windows/values remain absent/unknown, zero remains zero, invalid values fail closed.
 - These are observed upstream integrations, **not a promise of stable/supported public
-  subscription APIs**. No live credential/account test has been performed. Only Codex
+  subscription APIs**. Live checks used real Codex, Claude (OAuth and sessionKey) and
+OpenCode Go accounts on one Android 16 device; upstream changes can still break them. Only Codex
   reset **inventory count** is shown; individual credit IDs/expiry details and redemption
   are not implemented. Counts are observations, not proof they remain redeemable later.
 
@@ -216,8 +233,7 @@ APK output: `app/build/outputs/apk/debug/app-debug.apk`. No release/publishing s
 
 Exact validation commands use the three environment exports above. The logs named
 below were combined stdout/stderr under ignored `.build-evidence/`; that local folder
-was deleted during repository cleanup, and the recorded results remain summarized here
-and in `odd/tasks/android-app.md`:
+was deleted during repository cleanup, and the recorded results remain summarized here:
 
 | Command | Exit | Log |
 | --- | --- | --- |
