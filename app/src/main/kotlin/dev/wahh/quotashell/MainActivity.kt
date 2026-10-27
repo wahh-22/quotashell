@@ -1,7 +1,9 @@
 package dev.wahh.quotashell
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -41,6 +43,13 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         render()
         consumeRefreshIntent(intent)
+        // Expiry alerts are on by default; ask once for the Android 13+ permission they need.
+        if (savedInstanceState == null &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            services.expiryNotifications.claimPermissionRequest()
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -147,5 +156,6 @@ class MainActivity : Activity() {
 
     companion object {
         const val ACTION_REFRESH = "dev.wahh.quotashell.REFRESH"
+        private const val NOTIFICATION_PERMISSION_REQUEST = 11
     }
 }

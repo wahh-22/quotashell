@@ -56,8 +56,10 @@ readings with their original age. A failed Codex reset-inventory request does no
 invalidate successful usage; its count becomes unknown with a separate failure label.
 Reset inventory is the server's `available_count`, never spending `credits.balance`.
 
-Notifications are **opt-in** in Connections. Android 13+ requests `POST_NOTIFICATIONS`;
-Android 8+ uses the Credential reconnection channel. Denial/channel blocking leaves
+Notifications are **on by default**; turn them off with the checkbox in Connections
+(that explicit choice is kept). Installs from earlier default-off builds are switched
+on once. On Android 13+ the dashboard asks for `POST_NOTIFICATIONS` once on first
+open; Android 8+ uses the Credential reconnection channel. Denial/channel blocking leaves
 the app/widget warning intact. One notification is posted per reconnect episode;
 success, replacement or removal resets it. Notification taps open Connections without
 credentials or account IDs. Lock-screen notification detail is private.
@@ -418,7 +420,7 @@ appearance overrides and restores the exact supplied default theme.
   permission, malformed data and service failures to `ERROR` with the matching
   failure enum, not credential expiry. Generic unexpected exceptions are sanitized
   as service errors; provider exceptions are never logged. Secure connection controls
-  and opt-in notifications are implemented separately. Unknown credential expiry is
+  and default-on reconnect notifications are implemented separately. Unknown credential expiry is
   detectable on refresh, not promised in real time.
 - **Persistence:** `SnapshotStore.saveSnapshots()` is the single sanitized write
   boundary and triggers listeners plus all widget renders. Its versioned

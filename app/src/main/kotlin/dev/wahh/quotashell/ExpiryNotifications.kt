@@ -16,12 +16,32 @@ class ExpiryNotifications(
 ) {
     private val prefs = context.getSharedPreferences("notification_policy_v1", Context.MODE_PRIVATE)
     private val manager = context.getSystemService(NotificationManager::class.java)
+
+    // "optInChoice" records an explicit user choice; the legacy default-off "optIn" key is ignored.
     var optedIn: Boolean
-        get() = prefs.getBoolean("optIn", false)
+        get() = NotificationOptIn.enabled(if (prefs.contains(CHOICE)) prefs.getBoolean(CHOICE, true) else null)
         set(value) {
-            prefs.edit().putBoolean("optIn", value).apply()
+            prefs.edit().putBoolean(CHOICE, value).apply()
             if (!value) ProviderId.entries.forEach { manager.cancel(it.ordinal + 1) }
         }
+
+    val permissionGranted: Boolean
+        get() =
+            Build.VERSION.SDK_INT < 33 ||
+                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    /** True once per install: the caller should show the Android permission prompt now. */
+    fun claimPermissionRequest(): Boolean {
+        val ask =
+            NotificationOptIn.shouldRequestPermission(
+                optedIn,
+                permissionGranted,
+                prefs.getBoolean(PERMISSION_ASKED, false),
+                Build.VERSION.SDK_INT,
+            )
+        if (ask) prefs.edit().putBoolean(PERMISSION_ASKED, true).apply()
+        return ask
+    }
 
     init {
         manager.createNotificationChannel(
@@ -40,12 +60,7 @@ class ExpiryNotifications(
         if (!ExpiryPolicy.nextEpisode(snapshot.connection, notified)) {
             clear(provider)
         }
-        val allowed =
-            optedIn && manager.areNotificationsEnabled() &&
-                (
-                    Build.VERSION.SDK_INT < 33 ||
-                        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-                )
+        val allowed = optedIn && manager.areNotificationsEnabled() && permissionGranted
         if (!ExpiryPolicy.shouldNotify(snapshot.connection, notified, allowed)) return
         val intent =
             PendingIntent.getActivity(
@@ -71,5 +86,10 @@ class ExpiryNotifications(
         } catch (_: SecurityException) {
             // App/widget warning is independent of notification permission.
         }
+    }
+
+    private companion object {
+        const val CHOICE = "optInChoice"
+        const val PERMISSION_ASKED = "permissionAsked"
     }
 }
