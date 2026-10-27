@@ -16,7 +16,6 @@ import android.widget.Switch
 import android.widget.TextView
 import dev.wahh.quotashell.core.*
 import dev.wahh.quotashell.core.ui.*
-import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneId
 
@@ -106,15 +105,12 @@ class ConnectionsActivity : Activity() {
         alerts[provider] = alertGlyph().also { card.addView(it) }
         states[provider] = text("").also { card.addView(it) }
         val token =
-            ThemedInput(
-                this,
+            secretField(
                 "New ${provider.title} credential",
                 "Paste or type a new credential",
                 "Never prefilled · stored encrypted on this device",
-                secret = true,
                 paste = true,
             )
-        drafts += token
         if (provider == ProviderId.CLAUDE) {
             card.addView(
                 ChoiceControl(
@@ -128,7 +124,7 @@ class ConnectionsActivity : Activity() {
                     val cleared = secretAfterModeChange(claudeKind, next, token.edit.text.toString())
                     claudeKind = next
                     token.edit.text.replace(0, token.edit.length(), cleared)
-                    token.hideSecret()
+                    hideSecrets()
                     updateOrganizationPicker()
                 },
             )
@@ -142,14 +138,11 @@ class ConnectionsActivity : Activity() {
         card.addView(token)
         val account =
             if (provider == ProviderId.CODEX) {
-                ThemedInput(
-                    this,
+                secretField(
                     "Optional ChatGPT account ID",
                     "Account / workspace ID",
                     "Leave empty for the token's default account",
-                    secret = true,
                 ).also {
-                    drafts += it
                     card.addView(disclosure("Advanced · optional account ID", it))
                 }
             } else {
@@ -180,18 +173,16 @@ class ConnectionsActivity : Activity() {
         val result = text("").apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
         card.addView(result)
         var busy = false
-        var pastedHash: ByteArray? = null
-        var savedHash: ByteArray? = null
+        var savedPaste: SavedPaste? = null
         val clear =
             button("Clear clipboard") {
-                val unchanged = savedHash?.contentEquals(clipboardHash()) == true
-                if (canClearClipboard(savedHash != null, true, unchanged, Build.VERSION.SDK_INT) && Build.VERSION.SDK_INT >= 28) {
+                if (savedPaste?.canClear(clipboardText(), Build.VERSION.SDK_INT) == true && Build.VERSION.SDK_INT >= 28) {
                     getSystemService(ClipboardManager::class.java).clearPrimaryClip()
                     result.setText(R.string.input_clipboard_cleared)
                 } else {
                     result.setText(R.string.input_clipboard_changed)
                 }
-                savedHash = null
+                savedPaste = null
             }.apply { visibility = View.GONE }
         lateinit var save: Button
 
@@ -215,13 +206,17 @@ class ConnectionsActivity : Activity() {
         }
         save =
             button("Save & refresh") {
+                savedPaste = null
+                clear.visibility = View.GONE
+                hideSecrets()
                 busy = true
                 validate()
                 result.setText(R.string.input_saving)
                 try {
+                    val submittedToken = token.edit.text.toString()
                     val credential =
                         ManualCredential(
-                            token.edit.text.toString(),
+                            submittedToken,
                             account
                                 ?.edit
                                 ?.text
@@ -235,14 +230,12 @@ class ConnectionsActivity : Activity() {
                                 ClaudeCredentialKind.OAUTH_TOKEN
                             },
                         )
-                    val fromPaste = pastedHash?.takeIf { it.contentEquals(clipboardHash()) }
                     services.replaceCredential(provider, credential)
+                    savedPaste = token.pasteProvenance.saved(submittedToken)
+                    hideSecrets()
                     token.edit.text.clear()
-                    token.hideSecret()
                     account?.edit?.text?.clear()
-                    savedHash = fromPaste
-                    clear.visibility =
-                        if (canClearClipboard(fromPaste != null, true, true, Build.VERSION.SDK_INT)) View.VISIBLE else View.GONE
+                    clear.visibility = if (savedPaste != null && Build.VERSION.SDK_INT >= 28) View.VISIBLE else View.GONE
                     result.setText(R.string.input_saved_refreshing)
                     updateStates()
                     services.refresh {
@@ -263,18 +256,13 @@ class ConnectionsActivity : Activity() {
                     result.setText(R.string.input_storage_unconfirmed)
                 }
             }
-        token.onChanged = {
-            pastedHash = null
-            validate()
-        }
+        token.onChanged = { validate() }
         account?.onChanged = { validate() }
-        token.onPaste = { pastedHash = clipboardHash() }
         validate()
         card.addView(save)
         card.addView(clear)
         clearPasteState += {
-            pastedHash = null
-            savedHash = null
+            savedPaste = null
             clear.visibility = View.GONE
         }
         card.addView(text("// DANGER ZONE · removes this device's connection", 12f))
@@ -288,6 +276,8 @@ class ConnectionsActivity : Activity() {
                     .setPositiveButton("Remove") { _, _ ->
                         try {
                             services.replaceCredential(provider, null)
+                            hideSecrets()
+                            savedPaste = null
                             token.edit.text.clear()
                             account?.edit?.text?.clear()
                             clear.visibility = View.GONE
@@ -302,10 +292,31 @@ class ConnectionsActivity : Activity() {
         return card
     }
 
-    private fun clipboardHash(): ByteArray? {
+    /** All secret inputs must be constructed here so every lifecycle boundary covers them. */
+    private fun secretField(
+        label: String,
+        placeholder: String,
+        helper: String,
+        paste: Boolean = false,
+    ): ThemedInput = ThemedInput(this, label, placeholder, helper, secret = true, paste = paste).also { drafts += it }
+
+    private fun hideSecrets() {
+        drafts.forEach { it.hideSecret() }
+    }
+
+    private fun clearDrafts() {
+        hideSecrets()
+        drafts.forEach { it.edit.text.clear() }
+        clearPasteState.forEach { it() }
+    }
+
+    private fun clipboardText(): String? {
         val clip = getSystemService(ClipboardManager::class.java).primaryClip ?: return null
-        val value = clip.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text ?: return null
-        return MessageDigest.getInstance("SHA-256").digest(value.toString().toByteArray(Charsets.UTF_8))
+        return clip
+            .takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.text
+            ?.toString()
     }
 
     private fun updateOrganizationPicker() {
@@ -330,6 +341,7 @@ class ConnectionsActivity : Activity() {
                 val organization = options.getOrNull(labels.indexOf(label)) ?: return@ChoiceControl
                 try {
                     services.selectClaudeOrganization(organization.id)
+                    hideSecrets()
                     updateStates()
                     services.refresh {
                         if (!isDestroyed) {
@@ -379,14 +391,15 @@ class ConnectionsActivity : Activity() {
     }
 
     override fun onPause() {
-        drafts.forEach {
-            it.hideSecret()
-            it.edit.text.clear()
-        }
-        clearPasteState.forEach { it() }
+        clearDrafts()
         organizationPicker?.removeAllViews()
         renderedOrganizations = null
         services.store.unlisten(onChange)
         super.onPause()
+    }
+
+    override fun onStop() {
+        clearDrafts()
+        super.onStop()
     }
 }

@@ -37,8 +37,37 @@ class AppStyleTest(unittest.TestCase):
         self.assertIn("else helper", inputs)
         editor = (SRC / "ThemeEditor.kt").read_text()
         self.assertIn("showLabel = false", editor)
-        self.assertIn("inputLine.addView(swatch", editor)
-        self.assertIn("inputLine.addView(field", editor)
+        self.assertRegex(editor, r"inputLine\s*\.\s*addView\s*\(\s*swatch\b")
+        self.assertRegex(editor, r"inputLine\s*\.\s*addView\s*\(\s*field\b")
+
+    def test_all_secrets_are_registered_and_rehidden_at_every_boundary(self):
+        source = (SRC / "ConnectionsActivity.kt").read_text()
+        self.assertEqual(1, source.count("ThemedInput("), "Construct secrets only through the registered factory")
+        self.assertIn("private fun secretField(", source)
+        self.assertRegex(source, r"secret\s*=\s*true,[\s\S]*?\.also\s*\{\s*drafts\s*\+=\s*it\s*\}")
+        self.assertRegex(source, r"val token\s*=\s*secretField\(")
+        self.assertRegex(source, r'(?s)ProviderId.CODEX\)\s*\{\s*secretField\(')
+        self.assertIn("private fun hideSecrets()", source)
+        self.assertIn("drafts.forEach { it.hideSecret() }", source)
+        self.assertRegex(source, r"private fun clearDrafts\(\)\s*\{\s*hideSecrets\(\)")
+        for boundary in ("override fun onPause()", "override fun onStop()"):
+            body = source.split(boundary, 1)[1].split("\n    }", 1)[0]
+            self.assertIn("clearDrafts()", body)
+        self.assertRegex(source, r"(?s)services.replaceCredential\(provider, credential\).*?hideSecrets\(\)")
+        self.assertRegex(source, r"(?s)secretAfterModeChange\(.*?hideSecrets\(\).*?updateOrganizationPicker\(\)")
+
+    def test_paste_provenance_uses_the_exact_pasted_value(self):
+        inputs = (SRC / "ui/ThemedInput.kt").read_text()
+        self.assertIn("val pasteProvenance = ClipboardProvenance()", inputs)
+        self.assertIn("pasteProvenance.edited()", inputs)
+        self.assertIn("pasteProvenance.pasted(value)", inputs)
+        self.assertNotIn("onPaste", inputs)
+        self.assertEqual(1, inputs.count(".primaryClip"))
+        connections = (SRC / "ConnectionsActivity.kt").read_text()
+        self.assertIn("token.pasteProvenance.saved(submittedToken)", connections)
+        self.assertRegex(connections, r"services.replaceCredential\(provider, credential\)\s*savedPaste = token.pasteProvenance.saved\(submittedToken\)")
+        self.assertIn("savedPaste?.canClear(clipboardText(), Build.VERSION.SDK_INT)", connections)
+        self.assertNotIn("clipboardHash", connections)
 
     def test_interactive_controls_never_glitch(self):
         effects = (SRC / "ui/AppGlitch.kt").read_text()

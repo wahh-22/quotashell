@@ -14,6 +14,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.LinearLayout
 import dev.wahh.quotashell.core.PhantomTheme
+import dev.wahh.quotashell.core.ui.ClipboardProvenance
 import dev.wahh.quotashell.core.ui.FieldState
 import dev.wahh.quotashell.core.ui.FieldValidation
 
@@ -35,8 +36,8 @@ internal class ThemedInput(
     private val support = activity.text(helper, 12f)
     private var validation: FieldValidation? = null
     private var activeTheme = (activity.application as QuotaApplication).store.phantomTheme()
+    val pasteProvenance = ClipboardProvenance()
     var onChanged: () -> Unit = {}
-    var onPaste: () -> Unit = {}
     private var revealed = false
     private val reveal = if (secret) activity.button("Show") { toggleSecret() } else null
 
@@ -81,6 +82,7 @@ internal class ThemedInput(
                         before: Int,
                         count: Int,
                     ) {
+                        pasteProvenance.edited()
                         onChanged()
                     }
 
@@ -102,11 +104,16 @@ internal class ThemedInput(
                         .button("Paste") {
                             val clip = activity.getSystemService(ClipboardManager::class.java).primaryClip
                             // Text only; do not coerce a URI or launch a content provider.
-                            val value = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text
+                            val value =
+                                clip
+                                    ?.takeIf { it.itemCount > 0 }
+                                    ?.getItemAt(0)
+                                    ?.text
+                                    ?.toString()
                             if (value != null) {
                                 edit.setText(value)
                                 edit.setSelection(edit.length())
-                                onPaste()
+                                pasteProvenance.pasted(value)
                             } else {
                                 support.setText(R.string.input_clipboard_empty)
                             }
