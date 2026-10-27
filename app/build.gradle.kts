@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     kotlin("android")
@@ -6,6 +8,15 @@ plugins {
 // Keep even the generated debug key in the checkout, not ~/.android, and outside build/:
 // a clean must not change the signature, or installed builds (and their credentials) are lost.
 val localDebugKeystore = rootProject.layout.projectDirectory.file(".tools/signing/debug.keystore")
+
+// Release signing is local-only: .tools/signing/release.properties (ignored) names the key and
+// its passwords. Without it, assembleRelease produces an unsigned APK instead of failing.
+val releaseSigning =
+    rootProject.layout.projectDirectory
+        .file(".tools/signing/release.properties")
+        .asFile
+        .takeIf { it.isFile }
+        ?.let { file -> Properties().apply { file.inputStream().use { load(it) } } }
 
 android {
     namespace = "dev.wahh.quotashell"
@@ -24,6 +35,22 @@ android {
     kotlinOptions { jvmTarget = "17" }
     signingConfigs.getByName("debug") {
         storeFile = localDebugKeystore.asFile
+    }
+    releaseSigning?.let { props ->
+        signingConfigs.create("release") {
+            storeFile = rootProject.file(".tools/signing/${props.getProperty("storeFile")}")
+            storePassword = props.getProperty("storePassword")
+            keyAlias = props.getProperty("keyAlias")
+            keyPassword = props.getProperty("keyPassword")
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            // Public builds must never be debuggable: run-as would expose the app's credentials.
+            isDebuggable = false
+            isMinifyEnabled = false
+            if (releaseSigning != null) signingConfig = signingConfigs.getByName("release")
+        }
     }
 }
 dependencies { implementation(project(":core")) }

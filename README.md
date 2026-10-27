@@ -29,6 +29,24 @@ per-provider sync time and an in-widget `[ Sync ]` button:
 
 The Connections screen blocks screenshots on purpose (`FLAG_SECURE`), so it is not shown.
 
+## Install
+
+Download `QuotaShell-<version>.apk` from the
+[GitHub releases](https://github.com/wahh-22/quotashell/releases), allow installs from
+your browser or file manager, and open it. Release APKs are **not debuggable** and are
+signed with the project release key; verify before installing:
+
+```sh
+shasum -a 256 QuotaShell-0.1.0.apk          # compare with the release notes
+apksigner verify --print-certs QuotaShell-0.1.0.apk
+# Signer #1 certificate SHA-256 digest:
+# 296e17914b66b9d9204a63aa71fb47466cb4ae6bbe69e49b0a7a5274ec2bc700
+```
+
+A debug build from source is signed with a different key, so switching between a
+source build and a release requires uninstalling first, which erases stored
+credentials. Then add the **QuotaShell · all providers** widget from your launcher.
+
 ## Connect on your device
 
 Never send tokens, account IDs, keys, credential files or screenshots of them in chat.
@@ -188,6 +206,12 @@ export ANDROID_HOME="$PWD/.tools/android-sdk"
 mkdir -p "$ANDROID_USER_HOME"
 ./gradlew :core:test --console=plain
 ```
+
+Release builds (`./gradlew :app:assembleRelease`) are signed only when the ignored
+`.tools/signing/release.properties` (storeFile, storePassword, keyAlias, keyPassword)
+and its keystore exist; otherwise the release APK is left unsigned. Keep a private
+backup of the release key: losing it means published updates can no longer replace
+installed releases.
 
 Core tests need no SDK. To build the APK, first have the SDK owner **review and
 accept** the Android SDK licenses for this local root, then install the packages:
