@@ -46,9 +46,12 @@ fun filledSegments(
     count: Int,
 ): Int = ((percent ?: 0).coerceIn(0, 100) / 100f * count.coerceAtLeast(0)).roundToInt()
 
-class GlitchSchedule {
-    val children = 40
-    val glitchIndices = setOf(38, 39)
+class GlitchSchedule(
+    seed: Long = 0,
+) {
+    private val cleanChildren = 50 + (signalMix(seed, 101).toULong() % 57u).toInt()
+    val children = cleanChildren + 4
+    val glitchIndices = (cleanChildren until children).toSet()
     val intervalMillis = 200
     val periodMillis get() = children * intervalMillis
 }

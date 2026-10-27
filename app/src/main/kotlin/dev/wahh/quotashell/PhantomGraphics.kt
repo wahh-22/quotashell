@@ -1,14 +1,18 @@
 package dev.wahh.quotashell
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.RectF
 import android.graphics.Typeface
-import dev.wahh.quotashell.core.GlitchFrame
 import dev.wahh.quotashell.core.PhantomTheme
-import dev.wahh.quotashell.core.glitchGlyphIndices
-import dev.wahh.quotashell.core.substituteGlitchGlyphs
+import dev.wahh.quotashell.core.decodeReveal
+import dev.wahh.quotashell.core.signalLossPlan
+import dev.wahh.quotashell.core.signalMix
 import kotlin.math.min
 
 /** Shared Canvas primitives. Coordinates and text sizes are caller-owned logical units (dp).
@@ -18,39 +22,12 @@ class PhantomGraphics(
     context: Context,
     private val canvas: Canvas,
     private val theme: PhantomTheme,
-    private val frame: GlitchFrame = GlitchFrame(),
-    private val seed: Int = 0,
+    private val seed: Long = 0,
+    private val previousText: Map<String, String> = emptyMap(),
+    private val revealProgress: Double = 1.0,
 ) {
-    private var elementIndex = 0
-    private var selected = emptySet<Int>()
-    val elementCount get() = elementIndex
-
-    fun selectElements(indices: Set<Int>) {
-        selected = indices
-        elementIndex = 0
-    }
-
-    /** Every effect is clipped to one element, never to the board background. */
-    fun element(
-        left: Float,
-        top: Float,
-        right: Float,
-        bottom: Float,
-        draw: (GlitchFrame) -> Unit,
-    ) {
-        val active = if (elementIndex++ in selected) frame else GlitchFrame()
-        canvas.save()
-        canvas.clipRect(left, top, right, bottom)
-        draw(active)
-        canvas.translate(left, top)
-        slices(canvas, right - left, bottom - top, active, {}, {
-            canvas.save()
-            canvas.translate(-left, -top)
-            draw(active)
-            canvas.restore()
-        })
-        canvas.restore()
-    }
+    val textRuns = mutableMapOf<String, String>()
+    var protectedText = false
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val regular = typeface(context, false)
@@ -87,26 +64,24 @@ class PhantomGraphics(
                 Paint.Align.CENTER -> x - textWidth / 2
                 else -> x
             }
-        val bounds = paint.fontMetrics
-        val clean = cut
-        element(left, baseline + bounds.top, left + textWidth, baseline + bounds.bottom) { frame ->
-            cut = clean
-            if (frame.substituteGlyphs) {
-                val textSeed = seed xor value.hashCode()
-                cut = substituteGlitchGlyphs(cut, glitchGlyphIndices(cut.length, textSeed), textSeed)
+        val key = "$x/$baseline/$size/$heavy/$align"
+        textRuns[key] = cut
+        val shown = if (protectedText) cut else decodeReveal(previousText[key] ?: "", cut, seed, key.hashCode(), revealProgress)
+        paint.color = color
+        if (shown == cut) {
+            canvas.drawText(cut, x, baseline, paint)
+        } else {
+            // Preserve cell advances and clipping even with a proportional fallback glyph.
+            paint.textAlign = Paint.Align.LEFT
+            var cursor = left
+            cut.forEachIndexed { index, char ->
+                val advance = paint.measureText(char.toString())
+                canvas.save()
+                canvas.clipRect(cursor, baseline + paint.fontMetrics.top, cursor + advance, baseline + paint.fontMetrics.bottom)
+                canvas.drawText(shown[index].toString(), cursor, baseline, paint)
+                canvas.restore()
+                cursor += advance
             }
-            val offset = frame.rgbOffset
-            val jitter = frame.jitterX
-            if (offset > 0f) {
-                paint.color = theme.color("accent").argb
-                paint.alpha = ((paint.color ushr 24) * 0.45f).toInt()
-                canvas.drawText(cut, x - offset + jitter, baseline, paint)
-                paint.color = theme.color("notifications").argb
-                paint.alpha = ((paint.color ushr 24) * 0.4f).toInt()
-                canvas.drawText(cut, x + offset + jitter, baseline + 0.3f, paint)
-            }
-            paint.color = color
-            canvas.drawText(cut, x + jitter, baseline, paint)
         }
     }
 
@@ -242,24 +217,81 @@ class PhantomGraphics(
                 }
             }
 
-        /** Repaint displaced scene strips, not decorative lines. Clear each destination first. */
-        fun slices(
+        /** Shift from an immutable source, clearing the destination first: clip/pad, never smear.
+         * Coordinates are bitmap pixels. The caller excludes header/status/footer rows via [region].
+         */
+        fun signalLoss(
+            context: Context,
             canvas: Canvas,
-            width: Float,
-            height: Float,
-            frame: GlitchFrame,
-            clear: () -> Unit,
-            draw: () -> Unit,
+            source: Bitmap,
+            theme: PhantomTheme,
+            region: RectF,
+            cellWidth: Float,
+            rowHeight: Float,
+            seed: Long,
+            frame: Int,
         ) {
-            frame.slices.forEach { slice ->
+            val rows = (region.height() / rowHeight).toInt().coerceAtLeast(0)
+            val columns = (region.width() / cellWidth).toInt().coerceAtLeast(0)
+            val plan = signalLossPlan(seed, frame, rows, columns)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            paint.typeface = typeface(context, false)
+            paint.textSize = rowHeight * 0.85f
+
+            fun band(row: Int) = RectF(region.left, region.top + row * rowHeight, region.right, region.top + (row + 1) * rowHeight)
+
+            fun clear(rect: RectF) {
                 canvas.save()
-                val top = slice.topFraction * height
-                canvas.clipRect(0f, top, width, top + slice.heightFraction * height)
-                clear()
-                canvas.translate(slice.offset.toFloat(), 0f)
-                draw()
+                canvas.clipRect(rect)
+                canvas.drawColor(0, PorterDuff.Mode.CLEAR)
+                canvas.drawColor(theme.color("window").argb)
                 canvas.restore()
             }
+            canvas.save()
+            canvas.clipRect(region)
+            plan.shifts.forEach { shift ->
+                val destination = band(shift.row)
+                clear(destination)
+                canvas.save()
+                canvas.clipRect(destination)
+                val dx = shift.cells * cellWidth
+                canvas.translate(dx, 0f)
+                canvas.clipRect(region)
+                // SRC replaces alpha as well as color, so translucent pixels do not accumulate.
+                val copyPaint = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC) }
+                canvas.drawBitmap(source, 0f, 0f, copyPaint)
+                canvas.restore()
+            }
+
+            fun glyph(
+                row: Int,
+                column: Int,
+                char: Char,
+                role: String,
+            ) {
+                val rect =
+                    RectF(
+                        region.left + column * cellWidth,
+                        region.top + row * rowHeight,
+                        region.left + (column + 1) * cellWidth,
+                        region.top + (row + 1) * rowHeight,
+                    )
+                clear(rect)
+                paint.color = theme.color(role).argb
+                canvas.save()
+                canvas.clipRect(rect)
+                canvas.drawText(char.toString(), rect.left, rect.bottom - rowHeight * 0.15f, paint)
+                canvas.restore()
+            }
+            plan.staticRows.forEach { row ->
+                clear(band(row))
+                repeat(columns) { column ->
+                    val hash = signalMix(seed, 108, frame.toLong(), row.toLong(), column.toLong()).toULong()
+                    glyph(row, column, "░▒▓"[(hash % 3u).toInt()], "subtext2")
+                }
+            }
+            plan.corruptions.forEach { glyph(it.row, it.column, it.glyph, it.colorRole) }
+            canvas.restore()
         }
     }
 }

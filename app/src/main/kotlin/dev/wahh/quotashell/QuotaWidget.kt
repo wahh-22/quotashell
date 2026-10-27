@@ -16,6 +16,7 @@ import android.util.SizeF
 import android.widget.RemoteViews
 import dev.wahh.quotashell.core.Board
 import dev.wahh.quotashell.core.board
+import dev.wahh.quotashell.core.glitchSeed
 import dev.wahh.quotashell.core.shouldGlitchBurst
 import java.time.Instant
 import java.time.ZoneId
@@ -98,18 +99,25 @@ class QuotaWidget : AppWidgetProvider() {
             val (widthDp, heightDp) = sizeDp(manager.getAppWidgetOptions(id))
             val theme = store.phantomTheme()
             val enabled = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
-            val burst = shouldGlitchBurst(previous[id], content, enabled, theme.notificationAnimation)
+            val oldContent = previous[id]
+            val burst = shouldGlitchBurst(oldContent, content, enabled, theme.notificationAnimation)
             previous[id] = content
             val appContext = context.applicationContext
 
             val geometry = PhantomBoardRenderer.layout(appContext, content, theme, widthDp, heightDp)
-            val density = appContext.resources.displayMetrics.density
-
-            fun pixels(dp: Float): Int = (dp * density).toInt().coerceAtLeast(1)
 
             fun publish(frame: Int) {
                 val views = RemoteViews(appContext.packageName, R.layout.widget_quota)
-                val bitmap = PhantomBoardRenderer.render(appContext, content, theme, widthDp, heightDp, frame)
+                val bitmap =
+                    PhantomBoardRenderer.render(
+                        appContext,
+                        content,
+                        theme,
+                        widthDp,
+                        heightDp,
+                        previous = oldContent,
+                        revealProgress = if (frame == 0) 1.0 else (frame - 1) / 4.0,
+                    )
                 views.setImageViewBitmap(R.id.widget_board, bitmap)
                 val description =
                     content.cards.joinToString(". ") { card ->
@@ -123,12 +131,12 @@ class QuotaWidget : AppWidgetProvider() {
                 // Recheck on the final callback too: Remove animations may change during a burst.
                 val enabled = Settings.Global.getFloat(appContext.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
                 // Successive burst payloads contain one frame; only the settled board starts a flipper.
-                WidgetGlitchOverlay.apply(appContext, views, theme, enabled && frame == 0, bitmap) { seed ->
+                WidgetGlitchOverlay.apply(appContext, views, theme, enabled && frame == 0, bitmap, content.glitchSeed().toLong()) { seed ->
                     PhantomBoardRenderer.render(appContext, content, theme, widthDp, heightDp, seed)
                 }
-                views.setInt(R.id.widget_refresh, "setWidth", pixels(geometry.syncWidth))
-                views.setInt(R.id.widget_refresh, "setHeight", pixels(geometry.syncHeight))
-                views.setViewPadding(R.id.widget_refresh_position, 0, pixels(geometry.syncTop), pixels(geometry.syncEnd), 0)
+                views.setInt(R.id.widget_refresh, "setWidth", geometry.sync.widthPixels)
+                views.setInt(R.id.widget_refresh, "setHeight", geometry.sync.heightPixels)
+                views.setViewPadding(R.id.widget_refresh_position, 0, geometry.sync.topPixels, geometry.sync.endPixels, 0)
                 views.setOnClickPendingIntent(R.id.widget_board, activityIntent(appContext, id))
                 views.setOnClickPendingIntent(R.id.widget_glitch, activityIntent(appContext, id))
                 views.setOnClickPendingIntent(R.id.widget_refresh, refreshIntent(appContext, id))
@@ -146,9 +154,9 @@ class QuotaWidget : AppWidgetProvider() {
                     override fun run() {
                         val animationsStillEnabled =
                             Settings.Global.getFloat(appContext.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
-                        if (frame <= 3 && animationsStillEnabled) {
+                        if (frame <= 4 && animationsStillEnabled) {
                             publish(frame++)
-                            main.postDelayed(this, 150L)
+                            main.postDelayed(this, 225L)
                         } else {
                             publish(0)
                             pending.remove(id)

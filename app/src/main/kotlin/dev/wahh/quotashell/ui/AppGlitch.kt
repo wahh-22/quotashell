@@ -1,39 +1,44 @@
 package dev.wahh.quotashell
 
 import android.app.Activity
+import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
-import android.widget.TextView
 import dev.wahh.quotashell.core.glitchElementIndices
-import dev.wahh.quotashell.core.glitchGlyphIndices
-import dev.wahh.quotashell.core.substituteGlitchGlyphs
-import dev.wahh.quotashell.core.ui.appGlitchFrame
+import dev.wahh.quotashell.core.ui.appSignalActive
 import java.util.WeakHashMap
 
-private val bursts = WeakHashMap<Activity, View>()
+private data class AppBurst(
+    val view: View,
+    val restore: () -> Unit,
+)
 
-/** Sample only visible leaf views. Never draw a parent that might contain credential drafts. */
+private val bursts = WeakHashMap<Activity, AppBurst>()
+
+/** Sample only visible leaves, never a parent containing credential drafts. Two loss frames, 300 ms. */
 internal fun Activity.glitchAppElements() {
     val root = findViewById<ViewGroup>(android.R.id.content) ?: return
-    bursts.remove(this)?.let { root.overlay.remove(it) }
+    bursts.remove(this)?.let {
+        it.restore()
+        root.overlay.remove(it.view)
+    }
     val store = (application as QuotaApplication).store
     val start = SystemClock.uptimeMillis()
     val seed = start.toInt()
 
-    fun frame() =
-        appGlitchFrame(
-            seed,
+    fun active() =
+        appSignalActive(
             SystemClock.uptimeMillis() - start,
             store.phantomTheme().notificationAnimation,
             Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f,
         )
-    if (!frame().substituteGlyphs) return
+    if (!active()) return
     val views = mutableListOf<View>()
 
     fun collect(view: View) {
@@ -47,60 +52,70 @@ internal fun Activity.glitchAppElements() {
     collect(root)
     val effect =
         object : View(this) {
-            private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             private val origin = IntArray(2)
             private val position = IntArray(2)
             private val clip = Rect()
-            private var current = frame()
-            private var frameSeed = seed
-            private var selectedViews = emptyList<View>()
+            private var frame = 0
+            private var stopped = false
+            private val selectedViews = mutableMapOf<View, Bitmap>()
+            private val originalAlphas = mutableMapOf<View, Float>()
+
+            fun restore() {
+                originalAlphas.forEach { (view, alpha) -> view.alpha = alpha }
+                originalAlphas.clear()
+                selectedViews.clear()
+            }
+
+            fun stop() {
+                stopped = true
+                restore()
+            }
 
             fun prepare() {
-                current = frame()
-                frameSeed = seed + ((SystemClock.uptimeMillis() - start) / 150).toInt()
-                selectedViews = glitchElementIndices(frameSeed, views.size).map { views[it] }
+                if (stopped) return
+                restore()
+                if (!active()) return
+                frame = ((SystemClock.uptimeMillis() - start) / 150).toInt()
+                val density = resources.displayMetrics.density
+                // Capture once per frame, never allocate in onDraw. Originals are hidden briefly
+                // so displaced transparent text cannot smear over its undisplaced source.
+                for (index in glitchElementIndices(seed + frame, views.size)) {
+                    val view = views[index]
+                    if (!view.isShown || !view.getGlobalVisibleRect(clip)) continue
+                    val source = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                    view.draw(Canvas(source))
+                    val output = source.copy(Bitmap.Config.ARGB_8888, true)
+                    PhantomGraphics.signalLoss(
+                        this@glitchAppElements,
+                        Canvas(output),
+                        source,
+                        store.phantomTheme(),
+                        RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()),
+                        7f * density,
+                        12f * density,
+                        seed.toLong(),
+                        frame,
+                    )
+                    selectedViews[view] = output
+                    originalAlphas[view] = view.alpha
+                    view.alpha = 0f
+                }
                 invalidate()
             }
 
             override fun onDraw(canvas: Canvas) {
-                if (!current.substituteGlyphs || !root.isShown || !frame().substituteGlyphs) return
+                if (!active() || !root.isShown) {
+                    restore()
+                    return
+                }
                 root.getLocationOnScreen(origin)
-                for (view in selectedViews) {
-                    if (!view.isShown) continue
-                    if (!view.getGlobalVisibleRect(clip)) continue
+                for ((view, output) in selectedViews) {
+                    if (!view.isShown || !view.getGlobalVisibleRect(clip)) continue
                     clip.offset(-origin[0], -origin[1])
                     view.getLocationOnScreen(position)
                     canvas.save()
                     canvas.clipRect(clip)
-                    canvas.translate((position[0] - origin[0]).toFloat(), (position[1] - origin[1]).toFloat())
-
-                    fun drawElement() {
-                        canvas.save()
-                        canvas.translate(current.jitterX, 0f)
-                        view.draw(canvas)
-                        canvas.restore()
-                        if (view is TextView && view.layout != null) {
-                            val layout = view.layout
-                            paint.set(view.paint)
-                            paint.color = store.phantomTheme().color("accent").argb
-                            for (line in 0 until layout.lineCount) {
-                                val value =
-                                    layout.text
-                                        .subSequence(layout.getLineStart(line), layout.getLineEnd(line))
-                                        .toString()
-                                        .trimEnd('\n')
-                                val changed = substituteGlitchGlyphs(value, glitchGlyphIndices(value.length, frameSeed), frameSeed)
-                                canvas.drawText(
-                                    changed,
-                                    view.totalPaddingLeft - view.scrollX + layout.getLineLeft(line) + current.rgbOffset,
-                                    (view.totalPaddingTop - view.scrollY + layout.getLineBaseline(line)).toFloat(),
-                                    paint,
-                                )
-                            }
-                        }
-                    }
-                    drawElement()
-                    PhantomGraphics.slices(canvas, view.width.toFloat(), view.height.toFloat(), current, {}, { drawElement() })
+                    canvas.drawBitmap(output, (position[0] - origin[0]).toFloat(), (position[1] - origin[1]).toFloat(), null)
                     canvas.restore()
                 }
             }
@@ -108,11 +123,13 @@ internal fun Activity.glitchAppElements() {
     effect.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     effect.layout(0, 0, root.width, root.height)
     root.overlay.add(effect)
-    bursts[this] = effect
+    val burst = AppBurst(effect) { effect.stop() }
+    bursts[this] = burst
     effect.prepare()
     root.postDelayed({ effect.prepare() }, 150)
     root.postDelayed({
+        effect.stop()
         root.overlay.remove(effect)
-        if (bursts[this] === effect) bursts.remove(this)
+        if (bursts[this] === burst) bursts.remove(this)
     }, 300)
 }

@@ -23,7 +23,15 @@ class AppStyleTest(unittest.TestCase):
         self.assertIn("glitchElementIndices", effects)
         self.assertIn("selectedViews", effects)
         self.assertIn("getGlobalVisibleRect", effects)
-        self.assertIn("view.draw(canvas)", effects)
+        self.assertIn("view.draw(Canvas(source))", effects)
+        drawing = effects.split("override fun onDraw(canvas: Canvas)", 1)[1]
+        self.assertNotIn("Bitmap.createBitmap", drawing)
+        self.assertNotIn("Canvas(output)", drawing)
+        self.assertIn("originalAlphas[view] = view.alpha", effects)
+        self.assertIn("view.alpha = 0f", effects)
+        self.assertIn("view.alpha = alpha", effects)
+        self.assertIn("if (stopped) return", effects)
+        self.assertIn("effect.stop()", effects)
 
     def test_shared_typeface_and_live_theme(self):
         ui = (SRC / "TerminalUi.kt").read_text()
@@ -62,8 +70,12 @@ class AppStyleTest(unittest.TestCase):
 
     def test_effects_are_bounded_and_only_elements(self):
         effects = (SRC / "ui/AppGlitch.kt").read_text()
-        for contract in ("appGlitchFrame", "ANIMATOR_DURATION_SCALE", "is EditText", "PhantomGraphics.slices"):
+        for contract in ("appSignalActive", "ANIMATOR_DURATION_SCALE", "is EditText", "PhantomGraphics.signalLoss"):
             self.assertIn(contract, effects)
+        for removed in ("rgbOffset", "jitterX", "PhantomGraphics.slices", "NO SIGNAL", "N O   S I G N A L"):
+            self.assertNotIn(removed, effects)
+        self.assertIn("providerSyncStatus(snapshot, display, ZoneId.systemDefault())", (SRC / "MainActivity.kt").read_text())
+        self.assertNotIn("text(\"${display.state} · ${display.age}\")", (SRC / "MainActivity.kt").read_text())
         self.assertNotIn("drawColor", effects)
         self.assertNotIn("drawRect", effects)
         self.assertIn("glitchAppElements()", (SRC / "MainActivity.kt").read_text())

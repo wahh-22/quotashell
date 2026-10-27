@@ -35,7 +35,7 @@ class WidgetBoardTest {
                 ),
             )
         val card = board(listOf(claude), now, 3600, bogota).cards[1]
-        assertEquals("SYNC · 8M AGO", card.status)
+        assertEquals("SYNC 16:52", card.status)
         assertFalse(card.alert)
         assertEquals(listOf("5H", "WEEK"), card.rows.map { it.label })
         assertEquals(listOf("38%", "90%"), card.rows.map { it.usage })
@@ -44,7 +44,7 @@ class WidgetBoardTest {
         assertEquals(listOf(false, true), card.rows.map { it.hot })
     }
 
-    @Test fun reconnectErrorAndStaleRaiseAlertsWithoutHidingAge() {
+    @Test fun reconnectErrorAndStaleRaiseAlertsWithoutHidingAbsoluteSync() {
         val old = now.minusSeconds(2 * 3600)
         val result =
             board(
@@ -58,7 +58,7 @@ class WidgetBoardTest {
                 bogota,
             )
         assertEquals(
-            listOf("RECONNECT REQUIRED · 2H AGO", "ERROR · NETWORK · 2H AGO", "STALE · 2H AGO"),
+            listOf("RECONNECT REQUIRED · SYNC 15:00", "ERROR · NETWORK · SYNC 15:00", "STALE · SYNC 15:00"),
             result.cards.map { it.status },
         )
         assertTrue(result.cards.all { it.alert })

@@ -66,11 +66,18 @@ class CyberWidgetTest {
     }
 
     @Test fun periodicGlitchHasTinyDutyCycleAndHonorsBothAnimationSwitches() {
-        val schedule = GlitchSchedule()
-        assertEquals(40, schedule.children)
-        assertEquals(setOf(38, 39), schedule.glitchIndices)
-        assertEquals(8000, schedule.periodMillis)
-        assertEquals(200, schedule.intervalMillis)
+        val periods =
+            (0L..100L).map { seed ->
+                val schedule = GlitchSchedule(seed)
+                assertEquals(4, schedule.glitchIndices.size)
+                assertEquals((schedule.children - 4 until schedule.children).toSet(), schedule.glitchIndices)
+                assertTrue(schedule.periodMillis in 10_000..22_000)
+                assertEquals(200, schedule.intervalMillis)
+                assertEquals(schedule.children * 200, schedule.periodMillis)
+                assertEquals(schedule.glitchIndices, GlitchSchedule(seed).glitchIndices)
+                schedule.periodMillis
+            }
+        assertTrue(periods.toSet().size > 20)
     }
 
     @Test fun periodicGlitchEnableDecision() {

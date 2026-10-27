@@ -13,6 +13,7 @@ import dev.wahh.quotashell.core.ProviderId
 import dev.wahh.quotashell.core.ProviderSnapshot
 import dev.wahh.quotashell.core.formatLocalReset
 import dev.wahh.quotashell.core.present
+import dev.wahh.quotashell.core.providerSyncStatus
 import java.time.Instant
 import java.time.ZoneId
 
@@ -108,7 +109,7 @@ class MainActivity : Activity() {
             if (snapshot.connection == Connection.RECONNECT_REQUIRED || snapshot.connection == Connection.ERROR) {
                 card.addView(alertGlyph())
             }
-            card.addView(text("${display.state} · ${display.age}"))
+            card.addView(text(providerSyncStatus(snapshot, display, ZoneId.systemDefault())))
             if (display.windows.isEmpty()) card.addView(text("No reported quota windows"))
             for ((quota, window) in snapshot.windows.zip(display.windows)) {
                 val row = LinearLayout(this).apply { gravity = android.view.Gravity.CENTER_VERTICAL }

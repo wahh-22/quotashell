@@ -42,6 +42,22 @@ fun formatLocalReset(
 
 private val stampFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
 
+fun formatLocalSync(
+    instant: Instant?,
+    zone: ZoneId,
+): String = instant?.let { "Sync " + stampFormat.format(it.atZone(zone)) } ?: "No snapshot"
+
+/** State policy stays in present(); only its relative age is replaced at the UI boundary. */
+fun providerSyncStatus(
+    snapshot: ProviderSnapshot,
+    display: ProviderDisplay,
+    zone: ZoneId,
+): String {
+    if (snapshot.connection == Connection.DISCONNECTED) return "Not connected"
+    val sync = formatLocalSync(snapshot.capturedAt, zone)
+    return if (display.state == "Connected") sync else "${display.state} · $sync"
+}
+
 private val codes =
     mapOf(
         ProviderId.CODEX to ("CDX-01" to "Codex"),
@@ -81,12 +97,7 @@ private fun card(
     zone: ZoneId,
 ): BoardCard {
     val (code, name) = codes.getValue(snapshot.provider)
-    val status =
-        when (snapshot.connection) {
-            Connection.DISCONNECTED -> "Not connected"
-            Connection.CONNECTED -> if (display.state == "Connected") "Sync · ${display.age}" else display.state.withAge(display.age)
-            else -> display.state.withAge(display.age)
-        }
+    val status = providerSyncStatus(snapshot, display, zone)
     val alert =
         snapshot.connection == Connection.RECONNECT_REQUIRED ||
             snapshot.connection == Connection.ERROR ||
@@ -110,8 +121,6 @@ private fun card(
         }
     return BoardCard(code, name, status, alert, rows, note)
 }
-
-private fun String.withAge(age: String): String = if (age == "No snapshot" || contains(age)) this else "$this · $age"
 
 /** Natural text stays intact until the presentation boundary; default board callers retain legacy casing. */
 fun Board.withCasing(allCaps: Boolean): Board {

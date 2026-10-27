@@ -1,5 +1,6 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent">
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:layoutDirection="ltr">
     <ImageView android:id="@+id/widget_board" android:layout_width="match_parent" android:layout_height="match_parent"
         android:scaleType="fitXY" android:contentDescription="@string/open_dashboard" />
     <ViewFlipper android:id="@+id/widget_glitch" android:layout_width="match_parent" android:layout_height="match_parent"

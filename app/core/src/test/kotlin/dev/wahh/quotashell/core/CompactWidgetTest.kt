@@ -63,19 +63,21 @@ class CompactWidgetTest {
         }
     }
 
-    @Test fun seedAndSlicesAreStableAndBounded() {
+    @Test fun seedAndLossRowsAreStableAndBounded() {
         assertEquals(content().glitchSeed(), content(now.plusSeconds(120)).glitchSeed())
-        val slices = glitchSlices(123)
-        assertEquals(slices, glitchSlices(123))
-        assertNotEquals(slices, glitchSlices(456))
-        assertEquals(3, slices.size)
-        (-50..50).forEach { seed ->
-            glitchSlices(seed).forEach {
-                assertTrue(it.offset in -3..3)
-                assertTrue(it.topFraction in 0f..0.95f)
-                assertTrue(it.heightFraction in 0.01f..0.04f)
+        val plan = signalLossPlan(123, 0, 10, 50)
+        assertEquals(plan, signalLossPlan(123, 0, 10, 50))
+        assertNotEquals(plan, signalLossPlan(456, 0, 10, 50))
+        assertTrue(plan.shifts.size in 1..3)
+        (-50L..50L).forEach { seed ->
+            signalLossPlan(seed, 1, 10, 50).shifts.forEach {
+                assertTrue(kotlin.math.abs(it.cells) in 1..2)
+                assertTrue(it.row in 0..9)
             }
         }
+        val timestampOnly = content().copy(cards = content().cards.map { it.copy(status = it.status.replace("17:00", "17:30")) })
+        assertEquals(content().glitchSeed(), timestampOnly.glitchSeed())
+        assertFalse(shouldGlitchBurst(content(), timestampOnly, true, "GLITCH"))
     }
 
     @Test fun notificationAnimationIsEditableAndUnknownRoundTrips() {

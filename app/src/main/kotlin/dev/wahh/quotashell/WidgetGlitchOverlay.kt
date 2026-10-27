@@ -18,6 +18,7 @@ internal object WidgetGlitchOverlay {
         theme: PhantomTheme,
         animationsEnabled: Boolean,
         cleanFrame: Bitmap,
+        seed: Long,
         renderFrame: (Int) -> Bitmap,
     ) {
         val enabled = periodicGlitchEnabled(theme.notificationAnimation, animationsEnabled)
@@ -25,7 +26,7 @@ internal object WidgetGlitchOverlay {
         views.setViewVisibility(R.id.widget_board, if (enabled) View.INVISIBLE else View.VISIBLE)
         views.removeAllViews(R.id.widget_glitch)
         if (!enabled) return
-        val schedule = GlitchSchedule()
+        val schedule = GlitchSchedule(seed)
         views.setInt(R.id.widget_glitch, "setFlipInterval", schedule.intervalMillis)
         repeat(schedule.children) { index ->
             val child = RemoteViews(context.packageName, R.layout.widget_glitch_frame)

@@ -154,7 +154,7 @@ class PhantomThemeTest {
         val upper = board(snapshots, now, 3600, ZoneId.of("UTC"))
         val natural = board(snapshots, now, 3600, ZoneId.of("UTC"), allCaps = false)
         assertEquals("Claude", natural.cards[1].name)
-        assertEquals("Sync · just now", natural.cards[1].status)
+        assertEquals("Sync 22:00", natural.cards[1].status)
         assertEquals(
             "Week",
             natural.cards[1]

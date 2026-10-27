@@ -1,6 +1,7 @@
 package dev.wahh.quotashell.core
 
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /** Fit both axes, including enlargement, without unbounded type/bitmap growth. */
 fun boardFit(
@@ -19,30 +20,34 @@ fun quotaItemWidth(
     textWidths: List<Float>,
 ): Float {
     require(chartWidth.isFinite() && chartWidth >= 0f && textWidths.all { it.isFinite() && it >= 0f })
-    return chartWidth + 5f + (textWidths.maxOrNull() ?: 0f)
+    return chartWidth + 3f + (textWidths.maxOrNull() ?: 0f)
 }
 
-data class GlitchFrame(
-    val slices: List<GlitchSlice> = emptyList(),
-    val rgbOffset: Float = 0f,
-    val jitterX: Float = 0f,
-    val substituteGlyphs: Boolean = false,
-)
+/** Pixel-aligned bounds used verbatim by both Canvas and the RemoteViews target. */
+data class WidgetSyncGeometry(
+    val widthPixels: Int,
+    val heightPixels: Int,
+    val topPixels: Int,
+    val endPixels: Int,
+    val density: Float,
+) {
+    val widthDp get() = widthPixels / density
+    val heightDp get() = heightPixels / density
+    val topDp get() = topPixels / density
+    val endDp get() = endPixels / density
+}
 
-fun glitchFrame(
-    seed: Int,
-    enabled: Boolean,
-): GlitchFrame =
-    if (!enabled) {
-        GlitchFrame()
-    } else {
-        GlitchFrame(
-            glitchSlices(seed),
-            0.8f + (seed.toUInt() % 7u).toFloat() * 0.2f,
-            ((seed.toUInt() % 5u).toInt() - 2) * 0.5f,
-            true,
-        )
-    }
+fun widgetSyncGeometry(
+    fit: Float,
+    buttonWidth: Float,
+    extra: Float,
+    density: Float,
+): WidgetSyncGeometry {
+    require(fit > 0f && buttonWidth > 0f && extra >= 0f && density > 0f)
+
+    fun pixels(value: Float) = (value * fit * density).roundToInt().coerceAtLeast(1)
+    return WidgetSyncGeometry(pixels(buttonWidth), pixels(34 + extra * 2), pixels(3f), pixels(6f), density)
+}
 
 /** Platform-independent sparse sampling: each frame touches only one to three elements. */
 fun glitchElementIndices(
@@ -65,26 +70,3 @@ fun glitchElementIndices(
         repeat(count) { add(remaining.removeAt((next() % remaining.size.toUInt()).toInt())) }
     }
 }
-
-const val GLITCH_GLYPHS = "█▓▒░#@$%&/\\<>01"
-
-/** At most one in eight UTF-16 positions, stable across platforms; short labels still glitch. */
-fun glitchGlyphIndices(
-    length: Int,
-    seed: Int,
-): Set<Int> {
-    require(length >= 0)
-    if (length == 0) return emptySet()
-    val start = (seed.toUInt() % min(8, length).toUInt()).toInt()
-    return (start until length step 8).toSet()
-}
-
-fun substituteGlitchGlyphs(
-    value: String,
-    indices: Set<Int>,
-    seed: Int,
-): String =
-    value
-        .mapIndexed { index, char ->
-            if (index in indices) GLITCH_GLYPHS[((seed.toUInt() + index.toUInt()) % GLITCH_GLYPHS.length.toUInt()).toInt()] else char
-        }.joinToString("")

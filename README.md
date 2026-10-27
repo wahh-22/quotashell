@@ -196,7 +196,13 @@ previous-command differential baseline: **N/A**. No tests were omitted or ignore
    so Codex does not reserve the same space as a provider with three windows. The whole
    board scales up as well as down to fit both host dimensions (enlargement capped at
    1.8×). Codex reset inventory and reconnect/error/stale indicators remain visible.
-   The invisible Sync hit target uses the same scaled geometry as the drawn button.
+   Sync sits beside the title, uses the theme's button shape, and shares pixel-aligned
+   bounds with its invisible touch target (also in RTL device locales).
+   For the default natural-case 1/2/3-window fixture at 405×248 dp, density 2.25,
+   tighter card spacing increases content scale from **1.216947× to 1.463150×**;
+   Sync measures **96.444×49.778 dp** (previous logical button height: 14×scale).
+   These are bundled-font/renderer-metric calculations, not screenshot measurements;
+   window count, labels, font offset, theme and widget size affect actual scale.
 4. Choose **Quota chart style** in Settings: **CELLS** (default) uses narrow vertical
    segmented power cells, **TICKS** uses a 12-segment HUD arc, and **RING** keeps the donut.
    Unknown usage has empty segments/track and **N/A**; 85%+ uses the notifications color.
@@ -207,12 +213,17 @@ previous-command differential baseline: **N/A**. No tests were omitted or ignore
    can delay it. Concurrent dashboard/periodic refreshes share the existing guarded fetch.
    Open Settings from the dashboard to reconfigure all widgets together.
 
-Settings/data saves update all widgets immediately. Dashboard age updates every
-minute while visible; widgets request a local re-render every 30 minutes, subject
-to Android/launcher battery policy. The separate periodic network job requests provider
-refreshes on a similar best-effort interval. Age/stale transitions can lag on a sleeping
-launcher; this is not a real-time expiry alarm. Launcher sizing/font scaling must be
-verified on-device.
+Settings/data saves update all widgets immediately. Each provider shows an absolute
+local **Sync HH:mm** time, on both the widget and dashboard; reconnect/error/stale
+state words stay visible. Unknown timestamps remain **No snapshot**. The footer keeps
+**Last sync HH:mm** for the newest provider snapshot. These timestamps do not drift
+into a frozen “just now” label, and failed refreshes retain the last successful time.
+The dashboard reevaluates stale state every minute while visible; widgets request a
+local re-render every 30 minutes, subject to Android/launcher battery policy.
+Background provider sync is **about every 30 minutes**, deferrable by Android's Doze,
+network and battery restrictions; manual Sync/Refresh now also use the same gateway.
+Stale transitions can lag on a sleeping launcher; this is not a real-time expiry alarm.
+Launcher sizing/font scaling must be verified on-device.
 
 ## App styling
 
@@ -235,9 +246,11 @@ spinners and input fields have at least 48 dp touch heights. Real native labels 
 chart/alert descriptions remain available to accessibility services.
 
 On screen open/resume and refresh completion, **1–3 randomly selected visible leaf
-views** briefly gain jitter/displaced slices; selected labels also gain glyph substitution
-and a color split. Selection is deterministic per frame seed. Two frames
-settle after **300 ms**, with no periodic Activity animation or background bands.
+views** briefly use the same signal-loss row shifts, shaded static and noise glyphs
+as the widget. There are no color-split copies or element-jitter helpers. Selection is
+deterministic per frame seed. Two frames settle after **300 ms**, with no periodic
+Activity animation. Captures happen outside drawing; hidden originals are restored
+at completion or cancellation so translucent text does not smear.
 Credential and other EditText content is never sampled for this effect. Effects
 require `notificationAnimation=GLITCH` and nonzero system animator duration scale;
 otherwise no overlay is created. The overlay does not intercept touches or TalkBack.
@@ -278,27 +291,38 @@ adds row spacing, and the entire board still scales to fit the widget's bounds.
 | `buttonShape` | `SQUARED`: bracketed Sync; `BEVEL`: chamfered outline. Other values fall back to brackets. |
 | `notificationShape` | `INVERTED TRIANGLE`, `TRIANGLE`, `CIRCLE`, `SQUARE`, `NONE`. NONE hides the glyph, not the alert-card highlight. Unknown values use an inverted triangle. |
 | `isAllCaps` / `fontSizeOffset` | Uppercase versus natural-case board text / a bounded step added to every text size. |
-| `notificationAnimation` | `GLITCH`: periodic element-glitch frames plus a brief burst on changed content/new alerts. `FADE`, `DEFAULT`, `NONE` and unknown values disable both animations. Editable in Settings. |
+| `notificationAnimation` | `GLITCH`: periodic signal-loss frames plus decode reveal on changed content/new alerts. `FADE`, `DEFAULT`, `NONE` and unknown values disable both animations. Editable in Settings. |
 | `quotaShellChartStyle` | QuotaShell-only `CELLS`, `TICKS`, `RING`; stored in nonsecret theme JSON and preserved on export. PhantomShell ignores this extra key. Missing/unknown values render as CELLS; unknown values survive an unchanged edit/export. |
 
-Glitch acts on **text and charts**, not background lines: displaced horizontal slices
-within **1–3 selected element bounds**, accent/notification-color split copies, small
-element jitter, and brief symbol substitution in text. Distinct elements are selected
-deterministically from each frame seed; everything else stays clean. Seeds are
-deterministic for identical content (age-only updates do not change the seed).
-The settled board is clean: no static chromatic split, scanlines or background bands.
-With `notificationAnimation=GLITCH`, changed data or increased alerts trigger three
-frames 150 ms apart, then a settled frame at about 450 ms. Age-only updates and the
-first render after process start do not burst. Android may coalesce updates or end
-the app process, so burst playback is best effort.
+Periodic glitch follows **nu11signal-style signal loss**, adapted to bitmap text-row
+strips: each frame shifts **1–3 distinct horizontal rows by 1–2 character cells**,
+clipping and padding from an immutable clean source instead of smearing copies.
+One frame in three replaces a full row band with shaded static. **4–10 distinct cells**
+use `░▒▓█▚▞0137ACEF`, colored from accent, notifications, subtext2 and outline roles.
+Very tiny surfaces cap corruption at the number of available cells. Header/Sync,
+provider status and footer rows stay clean. There is **no NO SIGNAL overlay**, doubled
+corruption, RGB split, element jitter or CRT scanline effect; titles render clean
+when settled. SplitMix64-style hashing combines seed, salt, frame and coordinates.
 
-A launcher-driven **ViewFlipper** cycles 40 children at 200 ms: 38 clean frames and
-two sparse element-glitch frames, giving a 400 ms pulse about every **8 seconds**.
-The clean children reuse the same Bitmap instance through RemoteViews' bitmap cache;
-the base ImageView is hidden while flipping, preserving theme transparency.
-At 405×248 dp and density 2.25, each bitmap is 911×558 pixels (2,033,352 bytes);
-three use 6,100,056 bytes (~5.82 MiB). Larger hosts reduce bitmap density to keep the
-three-frame payload below 6 MiB. Burst updates carry only one bitmap.
+Changed content/new alerts instead use **decode reveal**: four frames 225 ms apart
+scramble about half of changed, non-space text cells with
+`ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-=:/<>`, then settle at **900 ms**. Unchanged
+cells remain untouched; resolution tends left-to-right with normalized resolve time
+`0.2 + 0.7*(1-sqrt(1-columnFraction)) + 0.1*random`. Status/footer/Sync stay readable.
+Timestamp-only updates and the first render after process start do not reveal.
+Android may coalesce updates or end the process, so playback is best effort.
+
+A launcher-driven **ViewFlipper** plays four loss frames at 200 ms, then returns to
+the clean board: an **800 ms burst every 10.8–22 seconds**, seeded from board content.
+The pre-rendered cycle repeats until the next widget update; it does not invent new
+random frames or wake the app for each burst. Clean children reuse the **same Bitmap
+instance** through RemoteViews' bitmap cache; the base ImageView is hidden while
+flipping, keeping clean-frame theme transparency intact.
+At 405×248 dp and density 2.25, each bitmap is 911×558 pixels (**2,033,352 bytes**);
+one clean plus four loss frames use **10,166,760 bytes** (~9.70 MiB), below 12 MB and
+the cover display's approximately 16.3 MB platform budget. Larger hosts reduce
+bitmap density to cap each frame at 2 MiB: five frames stay below **10,485,760 bytes**.
+Decode-reveal updates carry just one bitmap.
 No app timer, wake lock, foreground service or network request is needed for periodic
 playback. **Battery tradeoff:** while visible, the launcher redraws per flip even for
 clean children; flipping pauses when not visible. Launcher support/playback is best
