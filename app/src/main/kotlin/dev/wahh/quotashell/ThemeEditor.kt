@@ -109,7 +109,33 @@ internal class ThemeEditor(
         val values = if (current in known) known else listOf(current) + known
         return Spinner(activity).apply {
             contentDescription = label
-            adapter = ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, values)
+            adapter =
+                object : ArrayAdapter<String>(activity, android.R.layout.simple_spinner_dropdown_item, values) {
+                    private fun label(position: Int): android.view.View {
+                        val active = (activity.application as QuotaApplication).store.phantomTheme()
+                        return activity.text(values[position]).apply {
+                            typeface = PhantomGraphics.typeface(activity, false)
+                            text = active.displayText(values[position])
+                            textSize = (16f + active.fontSizeOffset).coerceAtLeast(12f)
+                            setTextColor(active.color("text").argb)
+                            setBackgroundColor(active.color("window").argb)
+                            minHeight = activity.dp(48)
+                            setPadding(activity.dp(12), activity.dp(12), activity.dp(12), activity.dp(12))
+                        }
+                    }
+
+                    override fun getView(
+                        position: Int,
+                        convertView: android.view.View?,
+                        parent: android.view.ViewGroup,
+                    ) = label(position)
+
+                    override fun getDropDownView(
+                        position: Int,
+                        convertView: android.view.View?,
+                        parent: android.view.ViewGroup,
+                    ) = label(position)
+                }
             setSelection(values.indexOf(current))
             body.addView(this)
         }

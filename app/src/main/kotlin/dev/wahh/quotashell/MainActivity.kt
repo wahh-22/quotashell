@@ -5,9 +5,12 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Toast
+import dev.wahh.quotashell.core.Connection
 import dev.wahh.quotashell.core.ProviderId
+import dev.wahh.quotashell.core.ProviderSnapshot
 import dev.wahh.quotashell.core.present
 import java.time.Instant
 
@@ -15,7 +18,12 @@ class MainActivity : Activity() {
     private val services get() = application as QuotaApplication
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var scroll: ScrollView
-    private val onChange: () -> Unit = { render() }
+    private var displayedSnapshots = emptyList<ProviderSnapshot>()
+    private val onChange: () -> Unit = {
+        val snapshotChanged = displayedSnapshots != services.store.snapshots()
+        render()
+        if (snapshotChanged) scroll.post { glitchAppElements() }
+    }
     private val tick =
         object : Runnable {
             override fun run() {
@@ -40,6 +48,7 @@ class MainActivity : Activity() {
         super.onResume()
         services.store.listen(onChange)
         render()
+        scroll.post { glitchAppElements() }
         handler.postDelayed(tick, 60_000)
     }
 
@@ -61,16 +70,18 @@ class MainActivity : Activity() {
             if (!isDestroyed) {
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                 render()
+                scroll.post { glitchAppElements() }
             }
         }
     }
 
     private fun render() {
         val y = if (::scroll.isInitialized) scroll.scrollY else 0
-        val theme = services.store.theme()
         val body = column()
-        body.addView(text("> QuotaShell", 24f, theme.accentArgb))
-        body.addView(text("Subscription quota · read only"))
+        val header = panel(code = "QSH-00")
+        header.addView(text("> QuotaShell", 28f))
+        header.addView(text("Subscription quota · read only", 13f))
+        body.addView(header)
         body.addView(button("Refresh now") { refresh() })
         body.addView(button("Connections / reconnect") { startActivity(Intent(this, ConnectionsActivity::class.java)) })
         body.addView(
@@ -79,16 +90,36 @@ class MainActivity : Activity() {
             },
         )
         val now = Instant.now()
-        for (snapshot in services.store.snapshots()) {
+        displayedSnapshots = services.store.snapshots()
+        for (snapshot in displayedSnapshots) {
             val display = present(snapshot, now, services.store.staleMinutes() * 60L)
-            val card = panel(theme.accentArgb, theme.backgroundArgb)
-            card.addView(text(display.title, 18f, theme.accentArgb))
+            val card =
+                panel(
+                    code =
+                        when (snapshot.provider) {
+                            ProviderId.CODEX -> "CDX-01"
+                            ProviderId.CLAUDE -> "CLD-02"
+                            ProviderId.OPENCODE_GO -> "OCG-03"
+                        },
+                )
+            card.addView(text(display.title, 22f))
+            if (snapshot.connection == Connection.RECONNECT_REQUIRED || snapshot.connection == Connection.ERROR) {
+                card.addView(alertGlyph())
+            }
             card.addView(text("${display.state} · ${display.age}"))
             if (display.windows.isEmpty()) card.addView(text("No reported quota windows"))
             for (window in display.windows) {
-                card.addView(text("${window.title} · ${window.usage}"))
-                window.progress?.let { card.addView(bar(it, theme.accentArgb)) }
-                card.addView(text(window.reset, 12f))
+                val row = LinearLayout(this).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+                row.addView(quotaChart(window.progress))
+                val labels =
+                    column().apply {
+                        setPadding(0, 0, 0, 0)
+                        layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                    }
+                labels.addView(text("${window.title} · ${window.usage}", 20f))
+                labels.addView(text(window.reset, 14f))
+                row.addView(labels)
+                card.addView(row)
             }
             if (snapshot.provider == ProviderId.CODEX) {
                 card.addView(text(display.resetInventory ?: "Codex resets available: Unknown"))
@@ -102,7 +133,7 @@ class MainActivity : Activity() {
             ),
         )
         scroll = ScrollView(this).apply { addView(body) }
-        terminalContent(scroll)
+        terminalContent(scroll, openingGlitch = false)
         scroll.post { scroll.scrollTo(0, y) }
     }
 

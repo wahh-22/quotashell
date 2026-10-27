@@ -1,9 +1,6 @@
 package dev.wahh.quotashell
 
 import android.app.Activity
-import android.content.res.ColorStateList
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.widget.*
 
@@ -12,19 +9,38 @@ internal fun Activity.dp(value: Int) = (value * resources.displayMetrics.density
 internal fun Activity.column() =
     LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(12), dp(16), dp(12))
+        setPadding(dp(16), dp(16), dp(16), dp(16))
     }
+
+internal data class TextStyle(
+    val size: Float,
+    val slot: String,
+)
+
+internal data class PanelStyle(
+    val code: String,
+)
 
 internal fun Activity.text(
     value: String,
-    size: Float = 14f,
-    color: Int = 0xFFE2EAF2.toInt(),
+    size: Float = 16f,
+    color: Int = 0,
 ) = TextView(this).apply {
     text = value
     textSize = size
-    typeface = Typeface.MONOSPACE
-    setTextColor(color)
-    setPadding(0, dp(5), 0, dp(5))
+    typeface = PhantomGraphics.typeface(this@text, size >= 18f)
+    tag =
+        TextStyle(
+            size,
+            if (size >= 18f || color != 0) {
+                "accent"
+            } else if (size <= 13f) {
+                "subtext"
+            } else {
+                "text"
+            },
+        )
+    setPadding(0, dp(7), 0, dp(7))
 }
 
 internal fun Activity.button(
@@ -32,40 +48,34 @@ internal fun Activity.button(
     action: () -> Unit,
 ) = Button(this).apply {
     text = label
-    typeface = Typeface.MONOSPACE
+    typeface = PhantomGraphics.typeface(this@button, true)
     isAllCaps = false
     minHeight = dp(48)
+    setPadding(dp(16), dp(8), dp(16), dp(8))
+    layoutParams =
+        android.widget.LinearLayout
+            .LayoutParams(-1, -2)
+            .apply { bottomMargin = dp(8) }
     setOnClickListener { action() }
 }
 
+@Suppress("UNUSED_PARAMETER") // Retain callers while all appearance comes from the active PhantomTheme.
 internal fun Activity.panel(
-    accent: Int,
-    background: Int,
+    accent: Int = 0,
+    background: Int = 0,
+    code: String = "SYS-00",
 ) = column().apply {
-    this.background =
-        GradientDrawable().apply {
-            setColor(background)
-            setStroke(dp(1), accent)
-        }
-    layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) }
+    tag = PanelStyle(code)
+    setPadding(dp(18), dp(30), dp(18), dp(18))
+    layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(16) }
 }
 
-internal fun Activity.bar(
-    percent: Int,
-    accent: Int,
-) = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-    max = 100
-    progress = percent
-    progressTintList = ColorStateList.valueOf(accent)
-    progressBackgroundTintList = ColorStateList.valueOf(0xFF506070.toInt())
-    layoutParams = LinearLayout.LayoutParams(-1, dp(12))
-    contentDescription = "$percent percent used"
-}
-
-internal fun Activity.terminalContent(view: View) {
+internal fun Activity.terminalContent(
+    view: View,
+    openingGlitch: Boolean = true,
+) {
     val frame =
         FrameLayout(this).apply {
-            setBackgroundColor(0xFF0A1018.toInt())
             addView(view)
             setOnApplyWindowInsetsListener { v, insets ->
                 v.setPadding(
@@ -78,5 +88,6 @@ internal fun Activity.terminalContent(view: View) {
             }
         }
     setContentView(frame)
+    installPhantomShell(frame, openingGlitch)
     frame.requestApplyInsets()
 }

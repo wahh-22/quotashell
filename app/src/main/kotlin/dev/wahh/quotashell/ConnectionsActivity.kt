@@ -21,13 +21,19 @@ import java.time.Instant
 class ConnectionsActivity : Activity() {
     private val services get() = application as QuotaApplication
     private val drafts = mutableListOf<EditText>()
-    private val onChange: () -> Unit = { updateStates() }
+    private var displayedSnapshots = emptyList<ProviderSnapshot>()
+    private val onChange: () -> Unit = {
+        val snapshotChanged = displayedSnapshots != services.store.snapshots()
+        updateStates()
+        if (snapshotChanged) window.decorView.post { glitchAppElements() }
+    }
     private val states = mutableMapOf<ProviderId, android.widget.TextView>()
+    private val alerts = mutableMapOf<ProviderId, View>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        val body = column()
+        val body = panel(code = "LINK-00")
         body.addView(text("> Connections", 24f))
         body.addView(
             text(
@@ -66,9 +72,9 @@ class ConnectionsActivity : Activity() {
             },
         )
         for (provider in ProviderId.entries) {
-            val theme = services.store.theme()
-            val card = panel(theme.accentArgb, theme.backgroundArgb)
-            card.addView(text(provider.title, 18f, theme.accentArgb))
+            val card = panel(code = "LINK-0${provider.ordinal + 1}")
+            card.addView(text(provider.title, 22f))
+            alerts[provider] = alertGlyph().also { card.addView(it) }
             states[provider] = text("").also { card.addView(it) }
             card.addView(
                 text(
@@ -94,6 +100,7 @@ class ConnectionsActivity : Activity() {
                         services.refresh {
                             if (!isDestroyed) {
                                 updateStates()
+                                glitchAppElements()
                                 message(it)
                             }
                         }
@@ -121,6 +128,13 @@ class ConnectionsActivity : Activity() {
                                 message("Secure storage could not be updated. Try again.")
                             }
                         }.show()
+                        .also { dialog ->
+                            val content = dialog.findViewById<android.view.ViewGroup>(android.R.id.content)
+                            if (content != null) {
+                                content.tag = PanelStyle("LINK-DEL")
+                                installPhantomShell(content, openingGlitch = false)
+                            }
+                        }
                 },
             )
             body.addView(card)
@@ -130,6 +144,7 @@ class ConnectionsActivity : Activity() {
                 services.refresh {
                     if (!isDestroyed) {
                         updateStates()
+                        glitchAppElements()
                         message(it)
                     }
                 }
@@ -154,9 +169,22 @@ class ConnectionsActivity : Activity() {
         }
 
     private fun updateStates() {
-        services.store.snapshots().forEach { snapshot ->
+        displayedSnapshots = services.store.snapshots()
+        displayedSnapshots.forEach { snapshot ->
+            val alert = snapshot.connection in listOf(Connection.RECONNECT_REQUIRED, Connection.ERROR)
+            alerts[snapshot.provider]?.visibility = if (alert) View.VISIBLE else View.GONE
             val display = present(snapshot, Instant.now(), services.store.staleMinutes() * 60L)
-            states[snapshot.provider]?.text = getString(R.string.connection_status, display.state, display.age)
+            states[snapshot.provider]?.let { label ->
+                label.text = getString(R.string.connection_status, display.state, display.age)
+                val slot = if (alert) "notifications" else "text"
+                label.tag = TextStyle(16f, slot)
+                label.setTextColor(
+                    services.store
+                        .phantomTheme()
+                        .color(slot)
+                        .argb,
+                )
+            }
         }
     }
 
@@ -166,6 +194,7 @@ class ConnectionsActivity : Activity() {
         super.onResume()
         services.store.listen(onChange)
         updateStates()
+        window.decorView.post { glitchAppElements() }
     }
 
     override fun onPause() {

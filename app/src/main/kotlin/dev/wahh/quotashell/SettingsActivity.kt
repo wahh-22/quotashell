@@ -43,9 +43,9 @@ class SettingsActivity : Activity() {
         state: Bundle? = null,
         notice: String = "",
     ) {
-        val body = column()
-        body.addView(text("> Appearance", 24f, theme.color("accent").argb))
-        body.addView(text("One board · all three providers. Save applies appearance and staleness to every widget.", 12f))
+        val body = panel(code = "CFG-00")
+        body.addView(text("> Appearance", 24f))
+        body.addView(text("One theme · app and all widgets. Save applies appearance and staleness everywhere.", 12f))
         message = text(state?.getString("message") ?: notice)
         message.accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE
         body.addView(message)
@@ -174,6 +174,11 @@ class SettingsActivity : Activity() {
             setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
         }
         finish()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::editor.isInitialized) window.decorView.post { glitchAppElements() }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

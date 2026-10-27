@@ -214,6 +214,36 @@ refreshes on a similar best-effort interval. Age/stale transitions can lag on a 
 launcher; this is not a real-time expiry alarm. Launcher sizing/font scaling must be
 verified on-device.
 
+## App styling
+
+Dashboard, Connections and Appearance share the widget's **active saved theme**:
+Adwaita Mono, theme-colored text and angular outlined panels with tab codes, stripe
+marks and binary corner decoration. Window/button shapes, notification glyphs,
+all-caps and font offset apply throughout, including native input and picker labels.
+The dashboard places larger CELLS/TICKS/RING charts left of quota text; reconnect/error
+states show the theme's alert glyph and color. System bars use the theme background.
+Native document/permission pickers remain Android-owned UI.
+
+Theme changes restyle existing controls through SnapshotStore listeners without a
+restart or rebuilding credential fields/draft editors. Import/reset still changes
+only the draft until Save; the editor itself stays in the saved theme. Text inputs
+retain entered case; all-caps is presentation-only on labels. Buttons, toggles,
+spinners and input fields have at least 48 dp touch heights. Real native labels and
+chart/alert descriptions remain available to accessibility services.
+
+On screen open/resume and refresh completion, visible **labels only** briefly gain
+deterministic glyph substitution, RGB split and displaced text slices. Two frames
+settle after **300 ms**, with no periodic Activity animation or background bands.
+Credential and other EditText content is never sampled for this effect. Effects
+require `notificationAnimation=GLITCH` and nonzero system animator duration scale;
+otherwise no overlay is created. The overlay does not intercept touches or TalkBack.
+
+Validation: JVM burst-boundary/reduced-motion tests and
+`python3 -I app/checks/check_app_style.py` cover pure scheduling and source wiring.
+The source guard checks retained FLAG_SECURE/masking/autofill protections, not runtime
+security or visual fidelity. Physical-device visual/accessibility verification is
+still required, particularly large font scaling and custom low-contrast themes.
+
 ## PhantomShell theme import and export
 
 Open **Settings / widget appearance → Import PhantomShell theme**, then select a
@@ -285,8 +315,7 @@ Exports preserve JSON field values, including unknown nested objects/arrays, whe
 practical, not original whitespace or numeric spelling. Numbers use the existing
 strict parser's Double representation. Unchanged editor fields retain their original
 HSL/fractional alpha rather than being quantized to the displayed hex/whole percent.
-The native dashboard retains its layout and uses the theme accent and window opacity;
-the full color/shape/type mapping applies to the board widget.
+The saved theme also styles the native app (see App styling below).
 
 **Migration:** existing explicitly stored accent RGB becomes the theme's accent;
 legacy panel opacity becomes only `window.alpha`. Other slots, including the outer
